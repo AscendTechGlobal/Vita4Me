@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Activity, 
   FileText, 
@@ -14,7 +14,19 @@ import {
   CheckCircle2, 
   AlertCircle,
   Clock,
-  Plus
+  RefreshCw,
+  Lightbulb,
+  HeartPulse,
+  Flame,
+  Copy,
+  Check,
+  CheckSquare,
+  Square,
+  Zap,
+  Apple,
+  Dumbbell,
+  ShieldCheck,
+  ArrowRight
 } from 'lucide-react';
 import { 
   UserProfile, 
@@ -25,6 +37,15 @@ import {
   Vaccine, 
   DailyHabits 
 } from '../types';
+
+interface HealthTip {
+  title: string;
+  category: string;
+  tip: string;
+  actionableAdvice: string;
+  scienceFact: string;
+  badge?: string;
+}
 
 interface OverviewTabProps {
   userProfile: UserProfile;
@@ -54,6 +75,120 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const activeMeds = medications.filter(m => m.active);
   const pendingVaccines = vaccines.filter(v => v.status === 'Pendente');
   const recentExams = exams.slice(0, 3);
+
+  // Focus topic for Gemini prompt
+  const [selectedTopic, setSelectedTopic] = useState<string>('geral');
+  const [completedHabit, setCompletedHabit] = useState<boolean>(false);
+  const [copiedTip, setCopiedTip] = useState<boolean>(false);
+
+  // Health Tip State
+  const [dailyTip, setDailyTip] = useState<HealthTip>({
+    title: 'Otimização de Fibras Solúveis e Absorção Lipídica',
+    category: 'Nutrição & Colesterol LDL',
+    tip: `Com base no seu nível de Colesterol LDL (${metrics.find(m => m.type === 'colesterol_ldl')?.value || 138} mg/dL) e hidratação atual (${dailyHabits.waterIntakeMl}ml), o consumo de beta-glucana (aveia) ou sementes de chia forma um gel intestinal que sequestra sais biliares, reduzindo a absorção de gorduras e auxiliando o fígado a depurar o LDL circulante.`,
+    actionableAdvice: 'Adicione 1 colher de sopa de farelo de aveia ou psyllium ao lanche da tarde acompanhado de 300ml de água.',
+    scienceFact: 'Ensaios clínicos demonstram que 3g diários de beta-glucana podem reduzir o LDL plasmático em até 7 a 10% sem efeitos adversos.',
+    badge: 'Foco Preventivo'
+  });
+  const [loadingTip, setLoadingTip] = useState(false);
+
+  const topicOptions = [
+    { id: 'geral', label: 'Síntese Geral', icon: Sparkles },
+    { id: 'colesterol', label: 'Colesterol & Nutrição', icon: Apple },
+    { id: 'hidratacao', label: 'Hidratação & Energia', icon: Droplet },
+    { id: 'sono', label: 'Sono Restaurador', icon: Moon },
+    { id: 'exercicio', label: 'Atividade & Longevidade', icon: Dumbbell },
+    { id: 'suplementos', label: 'Absorção de Vitamina D', icon: Pill }
+  ];
+
+  // Fetch Daily Tip from Gemini API
+  const fetchGeminiDailyTip = async (topicId?: string) => {
+    const topicToUse = topicId || selectedTopic;
+    try {
+      setLoadingTip(true);
+      const res = await fetch('/api/gemini/daily-tip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userProfile,
+          dailyHabits,
+          recentMetrics: metrics.slice(-6),
+          medications: activeMeds,
+          focusTopic: topicToUse === 'geral' ? undefined : topicOptions.find(t => t.id === topicToUse)?.label
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.tip) {
+        setDailyTip(data.tip);
+        setCompletedHabit(false);
+      } else {
+        // Fallback robusto conforme o tema selecionado
+        setFallbackTip(topicToUse);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar dica do dia com Gemini:', err);
+      setFallbackTip(topicToUse);
+    } finally {
+      setLoadingTip(false);
+    }
+  };
+
+  const setFallbackTip = (topic: string) => {
+    if (topic === 'hidratacao') {
+      setDailyTip({
+        title: 'Ritmo Circadiano de Hidratação Celular',
+        category: 'Hidratação & Energia',
+        tip: `Você registrou ${dailyHabits.waterIntakeMl}ml de água hoje (meta de ${dailyHabits.waterGoalMl}ml). Fracionar a ingestão em copos de 250ml a cada 90 minutos melhora o transporte de eletrólitos e previne a fadiga metabólica no final da tarde.`,
+        actionableAdvice: 'Beba 250ml de água agora e configure um lembrete visual na sua mesa de trabalho.',
+        scienceFact: 'A desidratação leve de apenas 1.5% reduz em até 12% a velocidade de processamento cognitivo e concentração.',
+        badge: 'Hidratação Ativa'
+      });
+    } else if (topic === 'sono') {
+      setDailyTip({
+        title: 'Higiene do Sono & Pico de Melatonina',
+        category: 'Sono Restaurador',
+        tip: `Com ${dailyHabits.sleepHours}h de sono registradas e qualidade "${dailyHabits.sleepQuality}", limitar luzes de espectro azul 45 minutos antes de deitar potencializa o sono de ondas lentas (fase N3), crucial para a depuração de metabólitos cerebrais.`,
+        actionableAdvice: 'Ative o filtro noturno no celular às 21h e evite refeições pesadas 2 horas antes de dormir.',
+        scienceFact: 'O sistema glinfático é 10x mais ativo durante o sono profundo, removendo proteínas tau e resíduos oxidativos.',
+        badge: 'Recuperação Neural'
+      });
+    } else if (topic === 'suplementos') {
+      setDailyTip({
+        title: 'Biodisponibilidade da Vitamina D3 com Lipídios',
+        category: 'Suplementação & Imunidade',
+        tip: `Seu último exame de Vitamina D apontou ${metrics.find(m => m.type === 'vitamina_d')?.value || 28.5} ng/mL. Como a vitamina D é lipossolúvel, sua absorção aumenta em até 50% quando ingerida junto a uma refeição contendo gorduras boas (azeite de oliva, ovos ou castanhas).`,
+        actionableAdvice: 'Tome sua dose diária de Vitamina D durante o almoço com uma fonte saudável de lipídios.',
+        scienceFact: 'A presença de triglicerídeos estimula a secreção de sais biliares essenciais para a micelização do colecalciferol.',
+        badge: 'Otimização Nutricional'
+      });
+    } else if (topic === 'exercicio') {
+      setDailyTip({
+        title: 'Impacto da Zona 2 na Sensibilidade à Insulina',
+        category: 'Atividade Física & Longevidade',
+        tip: `Seus ${dailyHabits.physicalActivityMins} minutos de ${dailyHabits.activityType} ajudam na translocação dos transportadores GLUT-4 para as membranas musculares de forma independente de insulina, otimizando o controle glicêmico.`,
+        actionableAdvice: 'Faça 5 a 10 minutos de caminhada leve ou alongamento após a principal refeição do dia.',
+        scienceFact: 'Contrações musculares leves pós-prandiais reduzem o pico glicêmico em até 22% em adultos saudáveis.',
+        badge: 'Metabolismo Ativo'
+      });
+    } else {
+      setDailyTip({
+        title: 'Sinergia Entre Fibras Solúveis e Hidratação',
+        category: 'Nutrição & Colesterol LDL',
+        tip: `Com base no seu perfil clínico e registro diário, combinar fibras solúveis com hidratação adequada cria um meio ideal para retenção e excreção de lipídios intestinais, protegendo a saúde endotelial.`,
+        actionableAdvice: 'Incremente suas saladas com azeite extravirgem e sementes de linhaça moída.',
+        scienceFact: 'Ácidos graxos monoinsaturados reduzem a oxidação das partículas de LDL prevenindo placas de ateroma.',
+        badge: 'Foco Preventivo'
+      });
+    }
+  };
+
+  const handleCopyTip = () => {
+    const textToCopy = `💡 Dica de Saúde HealthAI - ${dailyTip.title} (${dailyTip.category})\n\n${dailyTip.tip}\n\n👉 Passo Prático Hoje: ${dailyTip.actionableAdvice}\n🔬 Evidência: ${dailyTip.scienceFact}`;
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedTip(true);
+    setTimeout(() => setCopiedTip(false), 2500);
+  };
 
   // Latest key metric values
   const latestLdl = metrics.filter(m => m.type === 'colesterol_ldl').slice(-1)[0];
@@ -92,6 +227,208 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Widget: AI Health Tip of the Day (Dica de Saúde do Dia com Gemini) */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-teal-950/40 via-slate-900 to-slate-950 border border-teal-500/30 p-6 shadow-xl space-y-4">
+        
+        {/* Top Header of the Widget */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/90 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/20 to-emerald-500/20 text-teal-400 border border-teal-500/30 flex items-center justify-center shrink-0 shadow-inner">
+              <Lightbulb className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-teal-300">
+                  Dica de Saúde do Dia com IA
+                </h2>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-emerald-400" />
+                  {dailyTip.badge || 'Personalizada pelo Gemini'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Orientação personalizada gerada pelo Gemini a partir dos seus hábitos de hoje e exames clínicos
+              </p>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              onClick={handleCopyTip}
+              className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-750 text-slate-300 text-xs font-semibold border border-slate-700 transition-colors flex items-center gap-1.5"
+              title="Copiar dica"
+            >
+              {copiedTip ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+              <span className="text-[11px]">{copiedTip ? 'Copiado' : 'Copiar'}</span>
+            </button>
+
+            <button
+              onClick={() => fetchGeminiDailyTip()}
+              disabled={loadingTip}
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-500/20 to-emerald-500/20 hover:from-teal-500/30 hover:to-emerald-500/30 text-teal-300 text-xs font-semibold border border-teal-500/30 transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-teal-400 ${loadingTip ? 'animate-spin' : ''}`} />
+              <span>{loadingTip ? 'Gerando com Gemini...' : 'Nova Dica com IA'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Live Context Data Fed to Gemini */}
+        <div className="bg-slate-950/70 p-3 rounded-2xl border border-slate-800/80">
+          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2">
+            <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
+              Parâmetros de Saúde Analisados pela IA Hoje:
+            </span>
+            <span className="text-slate-500 hidden sm:inline">Atualizado em tempo real</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+            {/* Água */}
+            <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800/70">
+              <span className="text-[10px] text-slate-400 block">Hidratação:</span>
+              <span className="font-bold text-blue-400">{dailyHabits.waterIntakeMl} / {dailyHabits.waterGoalMl} ml</span>
+            </div>
+
+            {/* Sono */}
+            <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800/70">
+              <span className="text-[10px] text-slate-400 block">Sono:</span>
+              <span className="font-bold text-indigo-400">{dailyHabits.sleepHours}h ({dailyHabits.sleepQuality})</span>
+            </div>
+
+            {/* LDL */}
+            <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800/70">
+              <span className="text-[10px] text-slate-400 block">Colesterol LDL:</span>
+              <span className="font-bold text-amber-300">{latestLdl ? `${latestLdl.value} mg/dL` : '138 mg/dL'}</span>
+            </div>
+
+            {/* Pressão */}
+            <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800/70">
+              <span className="text-[10px] text-slate-400 block">Pressão Arterial:</span>
+              <span className="font-bold text-emerald-400">{latestBp ? `${latestBp.value}/${latestBp.valueSecondary}` : '120/80'}</span>
+            </div>
+
+            {/* Vitamina D / Meds */}
+            <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800/70 col-span-2 sm:col-span-1">
+              <span className="text-[10px] text-slate-400 block">Vitamina D:</span>
+              <span className="font-bold text-teal-300">{latestVitD ? `${latestVitD.value} ng/mL` : '28.5 ng/mL'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Focus Topic Selector Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+          <span className="text-[11px] font-semibold text-slate-400 whitespace-nowrap mr-1">Foco Temático:</span>
+          {topicOptions.map((topic) => {
+            const Icon = topic.icon;
+            const isSelected = selectedTopic === topic.id;
+            return (
+              <button
+                key={topic.id}
+                onClick={() => {
+                  setSelectedTopic(topic.id);
+                  fetchGeminiDailyTip(topic.id);
+                }}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-teal-500 text-slate-950 font-bold shadow-md shadow-teal-500/20'
+                    : 'bg-slate-950 text-slate-300 hover:bg-slate-800 border border-slate-800'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-slate-950' : 'text-teal-400'}`} />
+                <span>{topic.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tip Content Body */}
+        {loadingTip ? (
+          <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800/80 flex flex-col items-center justify-center text-center space-y-3 py-10">
+            <RefreshCw className="w-7 h-7 text-teal-400 animate-spin" />
+            <div>
+              <p className="text-sm font-bold text-white">Sintetizando seus dados clínicos com Gemini...</p>
+              <p className="text-xs text-slate-400 mt-0.5">Cruzando histórico de colesterol, hidratação e sono com evidências médicas.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3 pt-1">
+            <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-semibold text-teal-300 bg-teal-950/90 px-2.5 py-0.5 rounded-lg border border-teal-800/70">
+                  {dailyTip.category}
+                </span>
+                <h3 className="text-base font-bold text-white">{dailyTip.title}</h3>
+              </div>
+              <p className="text-xs text-slate-200 leading-relaxed">
+                {dailyTip.tip}
+              </p>
+            </div>
+
+            {/* 2-Column Actionable & Science Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              
+              {/* Micro-Habit Checklist Card */}
+              <div 
+                onClick={() => setCompletedHabit(!completedHabit)}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer group flex items-start gap-3 ${
+                  completedHabit 
+                    ? 'bg-emerald-950/30 border-emerald-500/40' 
+                    : 'bg-slate-950/80 border-slate-800/80 hover:border-teal-500/40'
+                }`}
+              >
+                <div className="pt-0.5 shrink-0 text-emerald-400">
+                  {completedHabit ? (
+                    <CheckSquare className="w-5 h-5 text-emerald-400" />
+                  ) : (
+                    <Square className="w-5 h-5 text-slate-500 group-hover:text-teal-400 transition-colors" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                      <Zap className="w-3.5 h-3.5" />
+                      Micro-Hábito Para Hoje:
+                    </span>
+                    {completedHabit && (
+                      <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                        Concluído hoje!
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-xs mt-1 transition-all ${
+                    completedHabit ? 'text-slate-300 line-through' : 'text-slate-100 font-medium'
+                  }`}>
+                    {dailyTip.actionableAdvice}
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-1.5">
+                    {completedHabit ? 'Excelente! O hábito foi registrado com sucesso.' : 'Clique para marcar como concluído no seu dia.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Science & Medical Evidence Card */}
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                  <HeartPulse className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-teal-300 uppercase tracking-wider block">
+                    Base e Evidência Médica:
+                  </span>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    {dailyTip.scienceFact}
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Key Health Metrics Grid */}
@@ -485,3 +822,4 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     </div>
   );
 };
+

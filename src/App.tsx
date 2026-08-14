@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { OverviewTab } from './components/OverviewTab';
@@ -14,6 +14,10 @@ import { InstitutionalTab } from './components/InstitutionalTab';
 import { TranslateExamModal } from './components/TranslateExamModal';
 import { ShareModal } from './components/ShareModal';
 import { AddRecordModal } from './components/AddRecordModal';
+import { AuthModal } from './components/AuthModal';
+import { MedicationNotificationToast } from './components/MedicationNotificationToast';
+import { checkScheduledMedications } from './utils/notificationManager';
+import { useAuth } from './contexts/AuthContext';
 
 import { 
   initialUserProfile, 
@@ -40,11 +44,11 @@ import {
 } from './types';
 
 export default function App() {
+  const { userProfile, currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Domain State
-  const [userProfile, setUserProfile] = useState(initialUserProfile);
   const [exams, setExams] = useState<Exam[]>(initialExams);
   const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>(initialMedicalRecords);
   const [metrics, setMetrics] = useState<MetricEntry[]>(initialMetrics);
@@ -55,10 +59,33 @@ export default function App() {
   const [dailyHabits, setDailyHabits] = useState<DailyHabits>(initialDailyHabits);
   const [documents, setDocuments] = useState<DocumentItem[]>(initialDocuments);
 
+  // Active in-app medication reminder toast state
+  const [activeReminder, setActiveReminder] = useState<{
+    medication: Medication;
+    time: string;
+  } | null>(null);
+
+  // Background timer to check scheduled medication reminders
+  useEffect(() => {
+    // Initial check
+    checkScheduledMedications(medications, (med, time) => {
+      setActiveReminder({ medication: med, time });
+    });
+
+    const interval = setInterval(() => {
+      checkScheduledMedications(medications, (med, time) => {
+        setActiveReminder({ medication: med, time });
+      });
+    }, 20000);
+
+    return () => clearInterval(interval);
+  }, [medications]);
+
   // Modals
   const [selectedExamToTranslate, setSelectedExamToTranslate] = useState<Exam | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [isAddRecordModalOpen, setIsAddRecordModalOpen] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
 
   // Handlers
   const handleAddExam = (newExam: Exam) => setExams(prev => [newExam, ...prev]);
@@ -85,12 +112,31 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased flex flex-col selection:bg-emerald-500 selection:text-slate-950">
       
-      {/* Top Navbar */}
+      {/* Active Medication Reminder Toast */}
+      {activeReminder && (
+        <MedicationNotificationToast
+          medication={activeReminder.medication}
+          time={activeReminder.time}
+          onMarkAsTaken={() => {
+            setActiveReminder(null);
+          }}
+          onSnooze={(minutes) => {
+            setActiveReminder(null);
+            setTimeout(() => {
+              setActiveReminder(activeReminder);
+            }, minutes * 60 * 1000);
+          }}
+          onDismiss={() => setActiveReminder(null)}
+        />
+      )}
+
+      {/* Top Navbar with dynamic Auth */}
       <Navbar
         userProfile={userProfile}
         onOpenAddModal={() => setIsAddRecordModalOpen(true)}
         onOpenShareModal={() => setIsShareModalOpen(true)}
         onOpenInstitutionalModal={() => setActiveTab('institutional')}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
       />
@@ -199,6 +245,12 @@ export default function App() {
 
       </div>
 
+      {/* Auth Modal (Login / Sign Up) */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+      />
+
       {/* Modals */}
       {selectedExamToTranslate && (
         <TranslateExamModal
@@ -214,6 +266,8 @@ export default function App() {
           medicalRecords={medicalRecords}
           medications={medications}
           allergies={allergies}
+          vaccines={vaccines}
+          metrics={metrics}
           onClose={() => setIsShareModalOpen(false)}
         />
       )}

@@ -309,6 +309,68 @@ Extraia em formato JSON:
     }
   });
 
+  // 5. API route: Daily Health Tip (Dica de Saúde do Dia personalizada com IA)
+  app.post("/api/gemini/daily-tip", async (req, res) => {
+    try {
+      const { userProfile, dailyHabits, recentMetrics, medications, focusTopic } = req.body;
+      const ai = getGeminiClient();
+
+      const prompt = `
+Você é o Assistente de Medicina Preventiva e Bem-estar da HealthAI.
+Gere uma "Dica de Saúde do Dia" (Health Tip of the Day) personalizada, prática, cientificamente embasada e motivadora, baseada exclusivamente no contexto de hábitos e métricas de saúde do usuário.
+
+DADOS DO USUÁRIO:
+- Nome: ${userProfile?.name || 'Paciente'} (Idade: ${userProfile?.age || 38} anos)
+- Hábitos Hoje: Água ${dailyHabits?.waterIntakeMl || 1750}/${dailyHabits?.waterGoalMl || 2500}ml, Sono ${dailyHabits?.sleepHours || 7.5}h (${dailyHabits?.sleepQuality || 'Boa'}), Humor: ${dailyHabits?.mood || 'Bem'}, Atividade: ${dailyHabits?.physicalActivityMins || 45}min (${dailyHabits?.activityType || 'Exercício'}), Peso: ${dailyHabits?.bodyWeightKg || 78.2}kg
+- Métricas Recentes: ${JSON.stringify(recentMetrics || [])}
+- Medicamentos / Suplementos: ${JSON.stringify(medications?.map((m: any) => `${m.name} (${m.dosage})`) || [])}
+${focusTopic ? `- Foco Temático Desejado: "${focusTopic}"` : ''}
+
+DIRETRIZES DA HEALTHAI:
+- Foque em uma dica altamente prática e aplicável para o dia de hoje (ex: otimização de hidratação, sono restaurador, redução de colesterol por fibras solúveis, absorção de vitamina D com gorduras boas, pausas ativas, controle pressórico).
+- Tom: acolhedor, profissional, encorajador e preventivo.
+- Não substitua diagnóstico médico.
+
+Retorne em formato JSON estrito:
+- "title": Título curto e cativante da dica (máx 6 palavras)
+- "category": Categoria (ex: "Nutrição & Colesterol", "Hidratação & Energia", "Sono Restaurador", "Atividade Física & Longevidade", "Saúde Preventiva")
+- "tip": Parágrafo explicativo e motivador da dica (3 a 4 frases)
+- "actionableAdvice": Um passo prático ou micro-hábito para executar hoje (1 frase em destaque)
+- "scienceFact": Uma breve evidência ou curiosidade científica associada (1 frase)
+- "badge": Texto de destaque (ex: "Foco de Hoje", "Destaque Clínico", "Rotina Otimizada", "Micro-Hábito")
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              category: { type: Type.STRING },
+              tip: { type: Type.STRING },
+              actionableAdvice: { type: Type.STRING },
+              scienceFact: { type: Type.STRING },
+              badge: { type: Type.STRING }
+            },
+            required: ["title", "category", "tip", "actionableAdvice", "scienceFact"]
+          }
+        }
+      });
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, tip: parsed });
+    } catch (error: any) {
+      console.error("Erro ao gerar dica de saúde:", error);
+      res.status(500).json({
+        success: false,
+        error: error?.message || "Erro ao gerar dica de saúde personalizada."
+      });
+    }
+  });
+
   // Vite development middleware or static asset serving
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

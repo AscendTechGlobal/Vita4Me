@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Activity, 
   Sparkles, 
@@ -8,15 +8,20 @@ import {
   Building2, 
   ShieldCheck, 
   Search,
-  Bell
+  Bell,
+  LogIn,
+  LogOut,
+  ChevronDown
 } from 'lucide-react';
 import { UserProfile } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 interface NavbarProps {
   userProfile: UserProfile;
   onOpenAddModal: () => void;
   onOpenShareModal: () => void;
   onOpenInstitutionalModal: () => void;
+  onOpenAuthModal: () => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
 }
@@ -26,9 +31,20 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAddModal,
   onOpenShareModal,
   onOpenInstitutionalModal,
+  onOpenAuthModal,
   searchQuery,
   setSearchQuery
 }) => {
+  const { currentUser, signOut } = useAuth();
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const getInitials = (name: string) => {
+    if (!name) return 'US';
+    const parts = name.trim().split(' ');
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
   return (
     <header id="healthai-navbar" className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 text-white px-4 lg:px-8 py-3.5 shadow-lg">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
@@ -99,15 +115,52 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>+ Registre</span>
           </button>
 
-          {/* User Profile Info */}
-          <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
-            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs">
-              EW
-            </div>
-            <div className="hidden xl:block text-left">
-              <p className="text-xs font-semibold text-slate-200 leading-none">{userProfile.name}</p>
-              <p className="text-[10px] text-slate-400 leading-tight mt-0.5">{userProfile.age} anos • {userProfile.bloodType}</p>
-            </div>
+          {/* User Profile & Auth Status */}
+          <div className="relative pl-2 border-l border-slate-800">
+            {currentUser ? (
+              <div className="relative">
+                <button
+                  onClick={() => setShowDropdown(!showDropdown)}
+                  className="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-800/80 transition-colors text-left"
+                >
+                  <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 font-bold text-xs">
+                    {getInitials(userProfile.name)}
+                  </div>
+                  <div className="hidden xl:block">
+                    <p className="text-xs font-semibold text-slate-200 leading-none truncate max-w-[130px]">{userProfile.name}</p>
+                    <p className="text-[10px] text-emerald-400 leading-tight mt-0.5">● Autenticado</p>
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
+                </button>
+
+                {showDropdown && (
+                  <div className="absolute right-0 mt-2 w-52 bg-slate-900 border border-slate-800 rounded-2xl p-2 shadow-2xl z-50 animate-in fade-in duration-150">
+                    <div className="p-2 border-b border-slate-800 mb-1">
+                      <p className="text-xs font-bold text-white truncate">{userProfile.name}</p>
+                      <p className="text-[11px] text-slate-400 truncate">{currentUser.email}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowDropdown(false);
+                        signOut();
+                      }}
+                      className="w-full flex items-center gap-2 p-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sair da Conta</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={onOpenAuthModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-all"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Entrar / Cadastrar</span>
+              </button>
+            )}
           </div>
 
         </div>
