@@ -161,3 +161,49 @@ export interface PricingPlan {
   aiQuotaDescription: string;
   storageDescription: string;
 }
+
+// ==============================================================================
+// TYPE ALIASES & COMPATIBILITY LAYER
+// ==============================================================================
+export type Exam = LabExam;
+export type ExamCategory = string;
+export type MedicalRecord = HealthRecord;
+export type MetricEntry = HealthIndicator;
+export type MetricType = string;
+export type DailyHabits = DailyHabit;
+export type ChatMessage = HealthAIChatMessage;
+
+export interface Vaccine {
+  id: string;
+  name: string;
+  date: string;
+  nextDose?: string;
+  manufacturer?: string;
+  notes?: string;
+}
+
+export interface Allergy {
+  id: string;
+  allergen: string;
+  severity: 'leve' | 'moderada' | 'grave';
+  reaction: string;
+}
+
+export interface Procedure {
+  id: string;
+  name: string;
+  date: string;
+  doctor?: string;
+  location?: string;
+  notes?: string;
+}
+
+export interface DocumentItem {
+  id: string;
+  title: string;
+  category: string;
+  date: string;
+  doctorName?: string;
+  fileUrl?: string;
+  summary?: string;
+}

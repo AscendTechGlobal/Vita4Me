@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
-import { AlertTriangle, RefreshCw, Home, ShieldAlert } from "lucide-react";
+import { AlertTriangle, RefreshCw, Home } from "lucide-react";
 import { captureException } from "../lib/observability";
 
 interface Props {
@@ -12,10 +12,17 @@ interface State {
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false,
-    errorId: null,
-  };
+  declare props: Readonly<Props>;
+  declare state: Readonly<State>;
+  declare setState: Component<Props, State>["setState"];
+
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      hasError: false,
+      errorId: null,
+    };
+  }
 
   public static getDerivedStateFromError(error: Error): State {
     const errorId = "err-" + Math.random().toString(36).substring(2, 9);

@@ -75,7 +75,27 @@ const getGeminiClient = () => {
 // ==============================================================================
 app.use(
   helmet({
-    contentSecurityPolicy: false, // Vite injeta scripts e estilos inline durante dev/preview
+    contentSecurityPolicy: IS_PROD
+      ? {
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://js.stripe.com"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            imgSrc: ["'self'", "data:", "blob:", "https:", "https://*.supabase.co"],
+            connectSrc: [
+              "'self'",
+              "https://*.supabase.co",
+              "https://api.stripe.com",
+              "https://generativelanguage.googleapis.com",
+              "https://*.resend.com",
+            ],
+            frameSrc: ["'self'", "https://js.stripe.com", "https://hooks.stripe.com"],
+            objectSrc: ["'none'"],
+            upgradeInsecureRequests: [],
+          },
+        }
+      : false,
     crossOriginEmbedderPolicy: false,
     frameguard: { action: "deny" },
     xContentTypeOptions: true,
@@ -432,8 +452,12 @@ const requireAuth = async (req: AuthenticatedRequest, res: Response, next: NextF
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
 
-  // Em ambiente local sem Supabase configurado, permitir fallback para modo demo
+  // Em ambiente local sem Supabase configurado, permitir fallback para modo demo APENAS em desenvolvimento
   if (!supabaseAdmin) {
+    if (IS_PROD) {
+      console.error("🚨 [CRÍTICO] Tentativa de autenticação em produção sem Supabase configurado.");
+      return res.status(500).json({ error: "Serviço de autenticação temporariamente indisponível." });
+    }
     req.user = {
       id: "demo-user-healthai",
       email: "usuario@vita4me.app",
@@ -953,8 +977,8 @@ app.post("/api/stripe/create-checkout", optionalAuth, async (req: AuthenticatedR
         },
       ],
       mode: "subscription",
-      success_url: `${req.headers.origin || APP_URL}/?checkout_success=true&plan=${targetPlan}`,
-      cancel_url: `${req.headers.origin || APP_URL}/?checkout_canceled=true`,
+      success_url: `${APP_URL}/?checkout_success=true&plan=${targetPlan}`,
+      cancel_url: `${APP_URL}/?checkout_canceled=true`,
     };
 
     if (userEmail) {
@@ -986,9 +1010,10 @@ app.post(
         return res.status(401).json({ error: "Usuário não autenticado." });
       }
 
+      const stripe = getStripeClient();
       if (!stripe) {
         return res.json({
-          url: `${req.headers.origin || APP_URL}/?portal_simulated=true`,
+          url: `${APP_URL}/?portal_simulated=true`,
         });
       }
 
@@ -1011,7 +1036,7 @@ app.post(
 
       const session = await stripe.billingPortal.sessions.create({
         customer: customerId,
-        return_url: `${req.headers.origin || APP_URL}/`,
+        return_url: `${APP_URL}/`,
       });
 
       return res.json({ url: session.url });
@@ -1023,13 +1048,17 @@ app.post(
 );
 
 // ==============================================================================
-// 7.5 RESEND EMAIL TEST ENDPOINT
+// 7.5 RESEND EMAIL TEST ENDPOINT (BLOQUEADO EM PRODUÇÃO & REQUER AUTH)
 // ==============================================================================
-app.post("/api/email/test", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/email/test", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const toEmail = req.body?.email || req.user?.email;
+    if (IS_PROD) {
+      return res.status(403).json({ error: "Endpoint de teste desativado em ambiente de produção por segurança." });
+    }
+
+    const toEmail = req.user?.email;
     if (!toEmail) {
-      return res.status(400).json({ error: "Informe o e-mail no corpo da requisição: { email: 'seu@email.com' }." });
+      return res.status(400).json({ error: "Usuário autenticado não possui e-mail cadastrado." });
     }
 
     const result = await sendTestEmail(toEmail);

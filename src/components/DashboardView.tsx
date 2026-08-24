@@ -46,12 +46,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const recentExams = exams.slice(0, 3);
 
   // Quick vital indicators
-  const glycemia = indicators.filter(i => i.name === 'Glicemia')[0];
-  const cholesterol = indicators.filter(i => i.name === 'Colesterol Total')[0];
-  const vitD = indicators.filter(i => i.name === 'Vitamina D')[0];
-  const systolic = indicators.filter(i => i.name === 'Pressão Sistólica')[0];
-  const diastolic = indicators.filter(i => i.name === 'Pressão Diastólica')[0];
-  const bp = indicators.filter(i => i.name === 'Pressão Arterial')[0];
+  const glucose = indicators.find(i => i.name.toLowerCase().includes('glic')) || null;
+  const ldl = indicators.find(i => i.name.toLowerCase().includes('colesterol') || i.name.toLowerCase().includes('ldl')) || null;
+  const vitD = indicators.find(i => i.name.toLowerCase().includes('vitamina')) || null;
+  const systolic = indicators.find(i => i.name.toLowerCase().includes('sistólica')) || null;
+  const diastolic = indicators.find(i => i.name.toLowerCase().includes('diastólica')) || null;
+  const bp = indicators.find(i => i.name.toLowerCase().includes('pressão')) || null;
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-200">
