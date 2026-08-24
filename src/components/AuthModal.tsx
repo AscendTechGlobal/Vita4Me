@@ -1,259 +1,375 @@
-import React, { useState } from 'react';
-import { 
-  Activity, 
-  Mail, 
-  Lock, 
-  User, 
-  ArrowRight, 
-  CheckCircle2, 
-  ShieldCheck, 
-  Sparkles, 
-  AlertCircle,
+import React, { useState, useEffect } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { trackEvent } from "../lib/analytics";
+import { LegalDocumentsModal, LegalTab } from "./LegalDocumentsModal";
+import {
+  X,
   Eye,
   EyeOff,
-  HeartPulse,
-  FolderHeart,
-  LockKeyhole
-} from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+  Lock,
+  Mail,
+  User,
+  ArrowRight,
+  Loader2,
+  ShieldCheck,
+  AlertCircle,
+  CheckCircle2,
+  Activity,
+  Heart,
+  KeyRound,
+} from "lucide-react";
 
-export const AuthModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
-  const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
+interface AuthModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
 
-  const [isSignUp, setIsSignUp] = useState<boolean>(false);
-  const [name, setName] = useState<string>('');
-  const [email, setEmail] = useState<string>('');
-  const [password, setPassword] = useState<string>('');
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
+  const {
+    signInWithEmail,
+    signUpWithEmail,
+    resetPasswordForEmail,
+    loginAsDemo,
+    isConfigured,
+  } = useAuth();
+
+  const [tab, setTab] = useState<"login" | "signup" | "reset">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [healthConsentAccepted, setHealthConsentAccepted] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<"privacidade" | "termos" | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Close on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen && !legalModalTab) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, legalModalTab, onClose]);
 
   if (!isOpen) return null;
 
-  const handleGoogleLogin = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMsg(null);
-    setLoading(true);
+    setSuccessMsg(null);
+    setIsLoading(true);
+
     try {
-      await signInWithGoogle();
-      onClose();
-    } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err.message || 'Falha ao autenticar com Google.');
+      if (tab === "login") {
+        if (!email || !password) {
+          setErrorMsg("Preencha e-mail e senha.");
+          return;
+        }
+        const { error } = await signInWithEmail(email, password);
+        if (error) {
+          setErrorMsg(error);
+        } else {
+          trackEvent('login_completed', { source: 'email_password' });
+          onClose();
+        }
+      } else if (tab === "signup") {
+        if (!email || !password || !fullName) {
+          setErrorMsg("Preencha todos os campos.");
+          return;
+        }
+        if (password.length < 6) {
+          setErrorMsg("A senha deve ter no mínimo 6 caracteres.");
+          return;
+        }
+        if (!termsAccepted) {
+          setErrorMsg("É obrigatório concordar com os Termos de Uso e Política de Privacidade.");
+          return;
+        }
+        if (!healthConsentAccepted) {
+          setErrorMsg("É obrigatório autorizar o tratamento de dados de saúde para criar o prontuário.");
+          return;
+        }
+        const { error } = await signUpWithEmail(email, password, fullName);
+        if (error) {
+          setErrorMsg(error);
+        } else {
+          trackEvent('signup_completed', { source: 'email_password' });
+          setSuccessMsg("Conta criada com sucesso! Verifique seu e-mail ou faça login.");
+          setTimeout(() => setTab("login"), 2000);
+        }
+      } else if (tab === "reset") {
+        if (!email) {
+          setErrorMsg("Informe seu e-mail cadastrado.");
+          return;
+        }
+        const { error } = await resetPasswordForEmail(email);
+        if (error) {
+          setErrorMsg(error);
+        } else {
+          setSuccessMsg("Link de redefinição de senha enviado para o seu e-mail!");
+        }
+      }
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const handleEmailSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    setLoading(true);
-
-    try {
-      if (isSignUp) {
-        if (!name.trim()) throw new Error('Por favor, informe seu nome completo.');
-        if (password.length < 6) throw new Error('A senha deve conter ao menos 6 caracteres.');
-        await signUpWithEmail(email.trim(), password, name.trim());
-      } else {
-        await signInWithEmail(email.trim(), password);
-      }
-      onClose();
-    } catch (err: any) {
-      console.error(err);
-      let message = 'Falha na autenticação. Verifique os dados inseridos.';
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        message = 'E-mail ou senha incorretos.';
-      } else if (err.code === 'auth/email-already-in-use') {
-        message = 'Este e-mail já está cadastrado. Tente entrar.';
-      } else if (err.message) {
-        message = err.message;
-      }
-      setErrorMsg(message);
-    } finally {
-      setLoading(false);
-    }
+  const handleDemoAccess = () => {
+    loginAsDemo();
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl shadow-emerald-950/40 relative overflow-hidden">
-        
-        {/* Subtle decorative glow */}
-        <div className="absolute -top-20 -right-20 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200">
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute right-5 top-5 p-2 rounded-xl text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+        >
+          <X className="w-5 h-5" />
+        </button>
 
-        {/* Header */}
-        <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 mx-auto mb-3 shadow-lg shadow-emerald-500/20">
-            <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
-              <Activity className="w-6 h-6 text-emerald-400" />
-            </div>
+        {/* Header Branding */}
+        <div className="text-center space-y-2 mb-6">
+          <div className="flex justify-center mb-2">
+            <img
+              src="/logo-full-transparent.png"
+              alt="Vita4Me"
+              className="h-16 w-auto object-contain drop-shadow-xs"
+            />
           </div>
-          
-          <h2 className="text-xl font-bold text-white tracking-tight">
-            {isSignUp ? 'Criar sua conta HealthAI' : 'Acesse seu Prontuário Vitalício'}
+          <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+            {tab === "login" && "Acessar Vita4Me"}
+            {tab === "signup" && "Criar Prontuário Inteligente"}
+            {tab === "reset" && "Recuperar Senha"}
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Seus exames, laudos e métricas sincronizados em nuvem criptografada com conformidade LGPD.
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {tab === "login" && "Centralize sua jornada médica e exames em um só lugar."}
+            {tab === "signup" && "Comece a organizar exames e indicadores de saúde com IA."}
+            {tab === "reset" && "Digite seu e-mail para receber as instruções de recuperação."}
           </p>
         </div>
 
-        {/* Error Alert */}
+        {/* Supabase Status Indicator */}
+        {!isConfigured && (
+          <div className="mb-4 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-[11px] flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 truncate">
+              <Activity className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="truncate">Modo Demonstração Ativo</span>
+            </div>
+          </div>
+        )}
+
+        {/* Tabs Switcher */}
+        <div className="flex bg-slate-100 dark:bg-slate-950/80 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 mb-6">
+          <button
+            type="button"
+            onClick={() => { setTab("login"); setErrorMsg(null); setSuccessMsg(null); }}
+            className={`flex-1 py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+              tab === "login"
+                ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+            }`}
+          >
+            Entrar
+          </button>
+          <button
+            type="button"
+            onClick={() => { setTab("signup"); setErrorMsg(null); setSuccessMsg(null); }}
+            className={`flex-1 py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+              tab === "signup"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+            }`}
+          >
+            Cadastrar
+          </button>
+        </div>
+
+        {/* Alerts */}
         {errorMsg && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2 animate-in slide-in-from-top-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+          <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 rounded-xl text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
             <span>{errorMsg}</span>
           </div>
         )}
 
-        {/* Google OAuth Button */}
-        <button
-          onClick={handleGoogleLogin}
-          disabled={loading}
-          className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-semibold text-xs flex items-center justify-center gap-3 transition-all shadow-md active:scale-[0.99] disabled:opacity-50"
-        >
-          <svg className="w-4 h-4" viewBox="0 0 24 24">
-            <path
-              fill="#4285F4"
-              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-            />
-            <path
-              fill="#34A853"
-              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-            />
-            <path
-              fill="#EA4335"
-              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-            />
-          </svg>
-          <span>Continuar com Google</span>
-        </button>
+        {successMsg && (
+          <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-xl text-xs flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span>{successMsg}</span>
+          </div>
+        )}
 
-        {/* Divider */}
-        <div className="flex items-center my-4">
-          <div className="flex-1 border-t border-slate-800" />
-          <span className="px-3 text-[11px] text-slate-500 font-medium uppercase tracking-wider">ou com e-mail</span>
-          <div className="flex-1 border-t border-slate-800" />
-        </div>
-
-        {/* Email Form */}
-        <form onSubmit={handleEmailSubmit} className="space-y-3">
-          {isSignUp && (
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {tab === "signup" && (
             <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">Nome Completo</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Nome Completo
+              </label>
               <div className="relative">
-                <User className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Seu nome"
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                  placeholder="Seu nome completo"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition"
                 />
               </div>
             </div>
           )}
 
           <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">E-mail</label>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              E-mail
+            </label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="email"
                 required
+                placeholder="seu@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu.email@exemplo.com"
-                className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition"
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">Senha</label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl pl-9 pr-9 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-              >
-                {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
+          {tab !== "reset" && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Senha
+                </label>
+                {tab === "login" && (
+                  <button
+                    type="button"
+                    onClick={() => { setTab("reset"); setErrorMsg(null); setSuccessMsg(null); }}
+                    className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium transition cursor-pointer"
+                  >
+                    Esqueceu a senha?
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition"
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          {tab === "signup" && (
+            <div className="space-y-2.5 pt-1 text-[11px] text-slate-600 dark:text-slate-400">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span className="leading-tight">
+                  Li e concordo com os{" "}
+                  <button
+                    type="button"
+                    onClick={() => setLegalModalTab("termos")}
+                    className="text-emerald-600 dark:text-emerald-400 underline font-semibold hover:text-emerald-700 cursor-pointer"
+                  >
+                    Termos de Uso
+                  </button>{" "}
+                  e com a{" "}
+                  <button
+                    type="button"
+                    onClick={() => setLegalModalTab("privacidade")}
+                    className="text-emerald-600 dark:text-emerald-400 underline font-semibold hover:text-emerald-700 cursor-pointer"
+                  >
+                    Política de Privacidade
+                  </button>
+                  .
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={healthConsentAccepted}
+                  onChange={(e) => setHealthConsentAccepted(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span className="leading-tight">
+                  Autorizo expressamente o tratamento dos meus <strong>dados pessoais sensíveis de saúde</strong> (exames, biomarcadores e medicamentos) para organização do prontuário e tradução com inteligência artificial conforme a Política de Privacidade (Art. 11, I da LGPD).
+                </span>
+              </label>
+            </div>
+          )}
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 mt-2 active:scale-[0.99] disabled:opacity-50"
+            disabled={isLoading}
+            className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
           >
-            {loading ? (
-              <span className="animate-pulse">Autenticando...</span>
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Processando...</span>
+              </>
             ) : (
               <>
-                <span>{isSignUp ? 'Criar Conta' : 'Entrar na Plataforma'}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <span>
+                  {tab === "login" && "Entrar na Conta"}
+                  {tab === "signup" && "Criar Prontuário"}
+                  {tab === "reset" && "Enviar Link de Recuperação"}
+                </span>
+                <ArrowRight className="w-4 h-4" />
               </>
             )}
           </button>
         </form>
 
-        {/* Toggle Mode */}
-        <div className="mt-5 text-center text-xs text-slate-400">
-          {isSignUp ? (
-            <p>
-              Já possui uma conta?{' '}
-              <button
-                type="button"
-                onClick={() => setIsSignUp(false)}
-                className="font-bold text-emerald-400 hover:text-emerald-300 underline"
-              >
-                Fazer login
-              </button>
-            </p>
-          ) : (
-            <p>
-              Não possui conta?{' '}
-              <button
-                type="button"
-                onClick={() => setIsSignUp(true)}
-                className="font-bold text-emerald-400 hover:text-emerald-300 underline"
-              >
-                Cadastre-se gratuitamente
-              </button>
-            </p>
-          )}
+        {/* Demo Mode Button */}
+        <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800 text-center space-y-2">
+          <button
+            type="button"
+            onClick={handleDemoAccess}
+            className="w-full py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+          >
+            <Eye className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Entrar como Demonstração (Sem Login)</span>
+          </button>
+          <p className="text-[10px] text-slate-500">
+            Acesso local instantâneo com prontuário e exames de exemplo.
+          </p>
         </div>
-
-        {/* Security badge */}
-        <div className="mt-5 pt-4 border-t border-slate-800/80 flex items-center justify-center gap-2 text-[10px] text-slate-500">
-          <LockKeyhole className="w-3 h-3 text-emerald-500" />
-          <span>Criptografia de ponta a ponta e Firebase Auth</span>
-        </div>
-
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 text-xs p-1"
-        >
-          ✕
-        </button>
-
       </div>
+
+      {/* Embedded Legal Documents Modal */}
+      {legalModalTab && (
+        <LegalDocumentsModal
+          isOpen={!!legalModalTab}
+          onClose={() => setLegalModalTab(null)}
+          initialTab={legalModalTab}
+        />
+      )}
     </div>
   );
 };

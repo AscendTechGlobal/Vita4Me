@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   FileText, 
-  Sparkles, 
+  FileCheck,
   Upload, 
   Filter, 
   Search, 
@@ -176,8 +176,8 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                     }}
                     className="px-3.5 py-1.5 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 text-xs font-semibold border border-teal-500/30 flex items-center gap-1.5 transition-colors"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-teal-400" />
-                    <span className="hidden sm:inline">Traduzir com IA</span>
+                    <FileCheck className="w-3.5 h-3.5 text-teal-400" />
+                    <span className="hidden sm:inline">Traduzir Laudo</span>
                   </button>
 
                   <div className="text-slate-400">
@@ -193,8 +193,8 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                   {/* Summary & Translation Box */}
                   <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 to-slate-950 border border-teal-500/20">
                     <div className="flex items-center gap-2 text-teal-300 text-xs font-bold mb-1.5">
-                      <Sparkles className="w-4 h-4 text-teal-400" />
-                      <span>Explicação em Linguagem Simples (HealthAI Tradutor)</span>
+                      <FileCheck className="w-4 h-4 text-teal-400" />
+                      <span>Explicação em Linguagem Simples (Vita4Me Tradutor)</span>
                     </div>
                     <p className="text-xs text-slate-200 leading-relaxed">
                       {exam.translatedExplanation || exam.summary}
@@ -252,7 +252,7 @@ export const ExamsTab: React.FC<ExamsTabProps> = ({
                       onClick={() => onOpenTranslateModal(exam)}
                       className="text-xs font-semibold text-emerald-400 hover:underline flex items-center gap-1"
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
+                      <FileCheck className="w-3.5 h-3.5" />
                       <span>Ver Análise Completa & Perguntas para o Médico</span>
                     </button>
                   </div>

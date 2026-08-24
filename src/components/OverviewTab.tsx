@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Activity, 
   FileText, 
-  Sparkles, 
+  FileCheck,
   Droplet, 
   Moon, 
   Smile, 
@@ -37,6 +37,7 @@ import {
   Vaccine, 
   DailyHabits 
 } from '../types';
+import { getAuthHeaders } from '../lib/apiClient';
 
 interface HealthTip {
   title: string;
@@ -93,7 +94,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const [loadingTip, setLoadingTip] = useState(false);
 
   const topicOptions = [
-    { id: 'geral', label: 'Síntese Geral', icon: Sparkles },
+    { id: 'geral', label: 'Síntese Geral', icon: Activity },
     { id: 'colesterol', label: 'Colesterol & Nutrição', icon: Apple },
     { id: 'hidratacao', label: 'Hidratação & Energia', icon: Droplet },
     { id: 'sono', label: 'Sono Restaurador', icon: Moon },
@@ -106,9 +107,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     const topicToUse = topicId || selectedTopic;
     try {
       setLoadingTip(true);
+      const headers = await getAuthHeaders();
       const res = await fetch('/api/gemini/daily-tip', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           userProfile,
           dailyHabits,
@@ -184,7 +186,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   };
 
   const handleCopyTip = () => {
-    const textToCopy = `💡 Dica de Saúde HealthAI - ${dailyTip.title} (${dailyTip.category})\n\n${dailyTip.tip}\n\n👉 Passo Prático Hoje: ${dailyTip.actionableAdvice}\n🔬 Evidência: ${dailyTip.scienceFact}`;
+    const textToCopy = `💡 Dica de Saúde Vita4Me - ${dailyTip.title} (${dailyTip.category})\n\n${dailyTip.tip}\n\n👉 Passo Prático Hoje: ${dailyTip.actionableAdvice}\n🔬 Evidência: ${dailyTip.scienceFact}`;
     navigator.clipboard.writeText(textToCopy);
     setCopiedTip(true);
     setTimeout(() => setCopiedTip(false), 2500);
@@ -206,14 +208,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div>
             <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold mb-1">
-              <Sparkles className="w-4 h-4" />
-              <span>Resumo Inteligente HealthAI</span>
+              <Activity className="w-4 h-4" />
+              <span>Resumo Inteligente Vita4Me</span>
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">
               Olá, {userProfile.name.split(' ')[0]}! Sua saúde está organizada.
             </h1>
             <p className="text-slate-300 text-sm mt-1 max-w-2xl leading-relaxed">
-              Todos os seus {exams.length} exames, receitas, histórico de consultas e hábitos diários estão centralizados e traduzidos por IA em uma linha do tempo única.
+              Todos os seus {exams.length} exames, receitas, histórico de consultas e hábitos diários estão centralizados e traduzidos em uma linha do tempo única.
             </p>
           </div>
 
@@ -222,8 +224,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               onClick={() => onNavigateTab('assistant')}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02]"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>Pergunte à IA HealthAI</span>
+              <Activity className="w-4 h-4" />
+              <span>Consultar Assistente Vita4Me</span>
             </button>
           </div>
         </div>
@@ -241,11 +243,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-teal-300">
-                  Dica de Saúde do Dia com IA
+                  Dica de Saúde do Dia
                 </h2>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-emerald-400" />
-                  {dailyTip.badge || 'Personalizada pelo Gemini'}
+                  <Activity className="w-3 h-3 text-emerald-400" />
+                  {dailyTip.badge || 'Análise Personalizada'}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -577,8 +579,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                       onClick={() => onOpenTranslateExam(exam)}
                       className="px-3 py-1.5 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 text-xs font-semibold border border-teal-500/20 flex items-center gap-1.5 shrink-0 transition-colors"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-teal-400" />
-                      <span>Traduzir com IA</span>
+                      <FileText className="w-3.5 h-3.5 text-teal-400" />
+                      <span>Traduzir Laudo</span>
                     </button>
                   </div>
 
@@ -754,7 +756,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               <span>Próxima Consulta Médica?</span>
             </div>
             <h3 className="text-sm font-bold text-white mb-1">
-              Prepare sua consulta com o Assistente HealthAI
+              Prepare sua consulta com o Assistente Vita4Me
             </h3>
             <p className="text-xs text-slate-300 mb-4 leading-relaxed">
               Gere automaticamente um checklist e a lista ideal de perguntas sobre seu histórico para fazer ao médico.

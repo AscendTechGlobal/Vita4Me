@@ -1,289 +1,306 @@
-import React, { useState, useEffect } from 'react';
-import { Navbar } from './components/Navbar';
-import { Sidebar, ActiveTab } from './components/Sidebar';
-import { OverviewTab } from './components/OverviewTab';
-import { ExamsTab } from './components/ExamsTab';
-import { MetricsTab } from './components/MetricsTab';
-import { AppointmentsTab } from './components/AppointmentsTab';
-import { MedicationsTab } from './components/MedicationsTab';
-import { VaccinesAndAllergiesTab } from './components/VaccinesAndAllergiesTab';
-import { HabitsTab } from './components/HabitsTab';
-import { DocumentsTab } from './components/DocumentsTab';
-import { AssistantChatTab } from './components/AssistantChatTab';
-import { InstitutionalTab } from './components/InstitutionalTab';
-import { TranslateExamModal } from './components/TranslateExamModal';
-import { ShareModal } from './components/ShareModal';
-import { AddRecordModal } from './components/AddRecordModal';
-import { AuthModal } from './components/AuthModal';
-import { MedicationNotificationToast } from './components/MedicationNotificationToast';
-import { checkScheduledMedications } from './utils/notificationManager';
-import { useAuth } from './contexts/AuthContext';
+import React, { useState, useEffect, Suspense, lazy } from "react";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import { Navbar } from "./components/Navbar";
+import { Sidebar, ActiveTab } from "./components/Sidebar";
+import { LandingPageView } from "./components/LandingPageView";
+
+// Lazy-loaded Views (Code-Splitting for Top Performance)
+const DashboardView = lazy(() => import("./components/DashboardView").then(m => ({ default: m.DashboardView })));
+const ExamsCentralView = lazy(() => import("./components/ExamsCentralView").then(m => ({ default: m.ExamsCentralView })));
+const IndicatorsView = lazy(() => import("./components/IndicatorsView").then(m => ({ default: m.IndicatorsView })));
+const TimelineView = lazy(() => import("./components/TimelineView").then(m => ({ default: m.TimelineView })));
+const MedicationsView = lazy(() => import("./components/MedicationsView").then(m => ({ default: m.MedicationsView })));
+const HabitsView = lazy(() => import("./components/HabitsView").then(m => ({ default: m.HabitsView })));
+const HealthAIChatView = lazy(() => import("./components/HealthAIChatView").then(m => ({ default: m.HealthAIChatView })));
+const SettingsView = lazy(() => import("./components/SettingsView").then(m => ({ default: m.SettingsView })));
+
+// Lazy-loaded Modals
+const BillingModal = lazy(() => import("./components/BillingModal").then(m => ({ default: m.BillingModal })));
+const AuthModal = lazy(() => import("./components/AuthModal").then(m => ({ default: m.AuthModal })));
+const ExportDossierModal = lazy(() => import("./components/ExportDossierModal").then(m => ({ default: m.ExportDossierModal })));
+const FamilyProfilesModal = lazy(() => import("./components/FamilyProfilesModal").then(m => ({ default: m.FamilyProfilesModal })));
+const HealthOnboardingModal = lazy(() => import("./components/HealthOnboardingModal").then(m => ({ default: m.HealthOnboardingModal })));
+
+const LoadingSpinner = () => (
+  <div className="flex items-center justify-center p-12 min-h-[300px]">
+    <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+  </div>
+);
 
 import { 
-  initialUserProfile, 
-  initialExams, 
-  initialMedicalRecords, 
-  initialMetrics, 
-  initialMedications, 
-  initialVaccines, 
-  initialAllergies, 
-  initialProcedures, 
-  initialDailyHabits, 
-  initialDocuments 
-} from './data/initialData';
+  getExams, 
+  getIndicators, 
+  getMedications, 
+  getHealthRecords, 
+  getFamilyMembers, 
+  getTodayHabit, 
+  getActiveFamilyMemberId, 
+  setActiveFamilyMemberId,
+  saveFamilyMember,
+  deleteFamilyMember
+} from "./lib/healthStorage";
+import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from "./types";
+import { trackEvent, trackPageView } from "./lib/analytics";
 
-import { 
-  Exam, 
-  MetricEntry, 
-  Medication, 
-  MedicalRecord, 
-  Vaccine, 
-  Allergy, 
-  DailyHabits, 
-  DocumentItem 
-} from './types';
+const MainAppContent: React.FC = () => {
+  const { profile } = useAuth();
+  const [viewMode, setViewMode] = useState<"landing" | "app">("landing");
+  const [currentTab, setCurrentTab] = useState<ActiveTab>("overview");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-export default function App() {
-  const { userProfile, currentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  // Modals state
+  const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isExportDossierOpen, setIsExportDossierOpen] = useState(false);
+  const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false);
+  const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
 
-  // Domain State
-  const [exams, setExams] = useState<Exam[]>(initialExams);
-  const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>(initialMedicalRecords);
-  const [metrics, setMetrics] = useState<MetricEntry[]>(initialMetrics);
-  const [medications, setMedications] = useState<Medication[]>(initialMedications);
-  const [vaccines, setVaccines] = useState<Vaccine[]>(initialVaccines);
-  const [allergies, setAllergies] = useState<Allergy[]>(initialAllergies);
-  const [procedures, setProcedures] = useState(initialProcedures);
-  const [dailyHabits, setDailyHabits] = useState<DailyHabits>(initialDailyHabits);
-  const [documents, setDocuments] = useState<DocumentItem[]>(initialDocuments);
+  // Data state
+  const [exams, setExams] = useState<LabExam[]>([]);
+  const [indicators, setIndicators] = useState<HealthIndicator[]>([]);
+  const [medications, setMedications] = useState<Medication[]>([]);
+  const [records, setRecords] = useState<HealthRecord[]>([]);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [activeMemberId, setActiveMemberIdState] = useState<string>("fam-me");
+  const [todayHabit, setTodayHabit] = useState<DailyHabit>({
+    user_id: "usr-default",
+    log_date: new Date().toISOString().split("T")[0],
+    water_ml: 1750,
+    sleep_hours: 7.5,
+    exercise_minutes: 45,
+  });
 
-  // Active in-app medication reminder toast state
-  const [activeReminder, setActiveReminder] = useState<{
-    medication: Medication;
-    time: string;
-  } | null>(null);
+  const refreshAllData = () => {
+    setExams(getExams());
+    setIndicators(getIndicators());
+    setMedications(getMedications());
+    setRecords(getHealthRecords());
+    setFamilyMembers(getFamilyMembers());
+    setActiveMemberIdState(getActiveFamilyMemberId());
+    setTodayHabit(getTodayHabit());
+  };
 
-  // Background timer to check scheduled medication reminders
   useEffect(() => {
-    // Initial check
-    checkScheduledMedications(medications, (med, time) => {
-      setActiveReminder({ medication: med, time });
-    });
+    refreshAllData();
 
-    const interval = setInterval(() => {
-      checkScheduledMedications(medications, (med, time) => {
-        setActiveReminder({ medication: med, time });
-      });
-    }, 20000);
+    // Detecção segura de retorno de Checkout com Sucesso
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('checkout_success') === 'true') {
+      const plan = (urlParams.get('plan') || 'individual') as 'individual' | 'family';
+      const alreadyTracked = sessionStorage.getItem('vita4me_checkout_tracked');
+      if (!alreadyTracked) {
+        sessionStorage.setItem('vita4me_checkout_tracked', 'true');
+        trackEvent('trial_started', { plan_tier: plan });
+        trackEvent('subscription_activated', { plan_tier: plan });
+      }
+      setViewMode('app');
+    }
+  }, []);
 
-    return () => clearInterval(interval);
-  }, [medications]);
+  const activeMember = familyMembers.find(f => f.id === activeMemberId) || familyMembers[0] || null;
 
-  // Modals
-  const [selectedExamToTranslate, setSelectedExamToTranslate] = useState<Exam | null>(null);
-  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
-  const [isAddRecordModalOpen, setIsAddRecordModalOpen] = useState<boolean>(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
-
-  // Handlers
-  const handleAddExam = (newExam: Exam) => setExams(prev => [newExam, ...prev]);
-  const handleAddMetric = (newMetric: MetricEntry) => setMetrics(prev => [...prev, newMetric]);
-  const handleAddMedication = (newMed: Medication) => setMedications(prev => [newMed, ...prev]);
-  const handleAddRecord = (newRec: MedicalRecord) => setMedicalRecords(prev => [newRec, ...prev]);
-  const handleAddVaccine = (newVax: Vaccine) => setVaccines(prev => [newVax, ...prev]);
-  const handleAddAllergy = (newAlg: Allergy) => setAllergies(prev => [newAlg, ...prev]);
-  const handleAddDocument = (newDoc: DocumentItem) => setDocuments(prev => [newDoc, ...prev]);
-
-  const handleUpdateWater = (amountMl: number) => {
-    setDailyHabits(prev => ({
-      ...prev,
-      waterIntakeMl: prev.waterIntakeMl + amountMl
-    }));
+  const handleSelectFamilyMember = (id: string) => {
+    setActiveFamilyMemberId(id);
+    setActiveMemberIdState(id);
+    trackEvent('family_profile_switched', { is_family_context: true });
   };
 
-  const handleToggleMedActive = (medId: string) => {
-    setMedications(prev => prev.map(m => m.id === medId ? { ...m, active: !m.active } : m));
+  const handleNavigate = (tab: ActiveTab) => {
+    setCurrentTab(tab);
+    trackPageView('/app/' + tab, 'Vita4Me — ' + tab);
+    if (tab === 'overview') {
+      trackEvent('dashboard_viewed');
+    }
   };
-
-  const pendingVaccinesCount = vaccines.filter(v => v.status === 'Pendente').length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased flex flex-col selection:bg-emerald-500 selection:text-slate-950">
-      
-      {/* Active Medication Reminder Toast */}
-      {activeReminder && (
-        <MedicationNotificationToast
-          medication={activeReminder.medication}
-          time={activeReminder.time}
-          onMarkAsTaken={() => {
-            setActiveReminder(null);
-          }}
-          onSnooze={(minutes) => {
-            setActiveReminder(null);
-            setTimeout(() => {
-              setActiveReminder(activeReminder);
-            }, minutes * 60 * 1000);
-          }}
-          onDismiss={() => setActiveReminder(null)}
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-[#7AC943] selection:text-[#0A3B2E]">
+      {viewMode === "landing" ? (
+        <LandingPageView
+          onEnterApp={() => setViewMode("app")}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          onOpenBillingModal={() => setIsBillingModalOpen(true)}
         />
-      )}
+      ) : (
+        <>
+          <Navbar
+            onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+            activeMember={activeMember}
+            onOpenFamilyModal={() => setIsFamilyModalOpen(true)}
+            onOpenBillingModal={() => setIsBillingModalOpen(true)}
+            onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            onOpenExportDossierModal={() => setIsExportDossierOpen(true)}
+            onToggleLandingPage={() => setViewMode("landing")}
+          />
 
-      {/* Top Navbar with dynamic Auth */}
-      <Navbar
-        userProfile={userProfile}
-        onOpenAddModal={() => setIsAddRecordModalOpen(true)}
-        onOpenShareModal={() => setIsShareModalOpen(true)}
-        onOpenInstitutionalModal={() => setActiveTab('institutional')}
-        onOpenAuthModal={() => setIsAuthModalOpen(true)}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-      />
-
-      {/* Main Full-Width Layout */}
-      <div className="flex-1 max-w-7xl w-full mx-auto flex flex-col lg:flex-row gap-0">
-        
-        {/* Sidebar */}
-        <Sidebar
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          examsCount={exams.length}
-          medicationsCount={medications.filter(m => m.active).length}
-          vaccinesPendingCount={pendingVaccinesCount}
-        />
-
-        {/* Content Body */}
-        <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
-          {activeTab === 'overview' && (
-            <OverviewTab
-              userProfile={userProfile}
-              exams={exams}
-              medicalRecords={medicalRecords}
-              metrics={metrics}
-              medications={medications}
-              vaccines={vaccines}
-              dailyHabits={dailyHabits}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-              onOpenTranslateExam={(exam) => setSelectedExamToTranslate(exam)}
-              onUpdateWater={handleUpdateWater}
+          <div className="flex-1 flex overflow-hidden">
+            <Sidebar
+              currentTab={currentTab}
+              onNavigate={handleNavigate}
+              isOpenMobile={isMobileMenuOpen}
+              onCloseMobile={() => setIsMobileMenuOpen(false)}
+              onOpenBillingModal={() => setIsBillingModalOpen(true)}
+              examsCount={exams.length}
+              medicationsCount={medications.filter(m => m.is_active).length}
             />
-          )}
 
-          {activeTab === 'exams' && (
-            <ExamsTab
-              exams={exams}
-              onOpenTranslateModal={(exam) => setSelectedExamToTranslate(exam)}
-              onAddExam={handleAddExam}
-            />
-          )}
+        <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-950">
+          <Suspense fallback={<LoadingSpinner />}>
+            {currentTab === "overview" && (
+              <DashboardView
+                activeMember={activeMember}
+                exams={exams}
+                indicators={indicators}
+                medications={medications}
+                records={records}
+                todayHabit={todayHabit}
+                onNavigate={handleNavigate}
+                onOpenExportDossierModal={() => setIsExportDossierOpen(true)}
+                onOpenOnboarding={() => setIsOnboardingModalOpen(true)}
+              />
+            )}
 
-          {activeTab === 'metrics' && (
-            <MetricsTab
-              metrics={metrics}
-              onAddMetric={handleAddMetric}
-            />
-          )}
+            {currentTab === "exams" && (
+              <ExamsCentralView
+                exams={exams}
+                activeMember={activeMember}
+                onRefreshExams={refreshAllData}
+                onBack={() => handleNavigate("overview")}
+              />
+            )}
 
-          {activeTab === 'appointments' && (
-            <AppointmentsTab
-              medicalRecords={medicalRecords}
-              userProfile={userProfile}
-              exams={exams}
-              medications={medications}
-              onAddRecord={handleAddRecord}
-            />
-          )}
+            {currentTab === "indicators" && (
+              <IndicatorsView
+                indicators={indicators}
+                activeMember={activeMember}
+                onRefreshIndicators={refreshAllData}
+                onBack={() => handleNavigate("overview")}
+              />
+            )}
 
-          {activeTab === 'medications' && (
-            <MedicationsTab
-              medications={medications}
-              onAddMedication={handleAddMedication}
-              onToggleActive={handleToggleMedActive}
-            />
-          )}
+            {currentTab === "timeline" && (
+              <TimelineView
+                records={records}
+                activeMember={activeMember}
+                onRefreshRecords={refreshAllData}
+                onBack={() => handleNavigate("overview")}
+              />
+            )}
 
-          {activeTab === 'vaccines' || activeTab === 'allergies' ? (
-            <VaccinesAndAllergiesTab
-              vaccines={vaccines}
-              allergies={allergies}
-              procedures={procedures}
-              onAddVaccine={handleAddVaccine}
-              onAddAllergy={handleAddAllergy}
-            />
-          ) : null}
+            {currentTab === "medications" && (
+              <MedicationsView
+                medications={medications}
+                activeMember={activeMember}
+                onRefreshMedications={refreshAllData}
+                onBack={() => handleNavigate("overview")}
+              />
+            )}
 
-          {activeTab === 'habits' && (
-            <HabitsTab
-              dailyHabits={dailyHabits}
-              onUpdateHabits={setDailyHabits}
-            />
-          )}
+            {currentTab === "habits" && (
+              <HabitsView
+                todayHabit={todayHabit}
+                onRefreshHabit={refreshAllData}
+                onBack={() => handleNavigate("overview")}
+              />
+            )}
 
-          {activeTab === 'documents' && (
-            <DocumentsTab
-              documents={documents}
-              onAddDocument={handleAddDocument}
-            />
-          )}
+            {currentTab === "chat" && (
+              <HealthAIChatView
+                activeMember={activeMember}
+                exams={exams}
+                indicators={indicators}
+                medications={medications}
+                records={records}
+                onBack={() => handleNavigate("overview")}
+              />
+            )}
 
-          {activeTab === 'assistant' && (
-            <AssistantChatTab
-              userProfile={userProfile}
-              exams={exams}
-              medicalRecords={medicalRecords}
-              medications={medications}
-              vaccines={vaccines}
-              dailyHabits={dailyHabits}
-            />
-          )}
-
-          {activeTab === 'institutional' && (
-            <InstitutionalTab userProfile={userProfile} />
-          )}
+            {currentTab === "settings" && (
+              <SettingsView
+                onOpenBillingModal={() => setIsBillingModalOpen(true)}
+                onOpenOnboarding={() => setIsOnboardingModalOpen(true)}
+                onBack={() => handleNavigate("overview")}
+              />
+            )}
+          </Suspense>
         </main>
-
       </div>
-
-      {/* Auth Modal (Login / Sign Up) */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-      />
-
-      {/* Modals */}
-      {selectedExamToTranslate && (
-        <TranslateExamModal
-          exam={selectedExamToTranslate}
-          onClose={() => setSelectedExamToTranslate(null)}
-        />
+      </>
       )}
 
-      {isShareModalOpen && (
-        <ShareModal
-          userProfile={userProfile}
-          exams={exams}
-          medicalRecords={medicalRecords}
-          medications={medications}
-          allergies={allergies}
-          vaccines={vaccines}
-          metrics={metrics}
-          onClose={() => setIsShareModalOpen(false)}
-        />
-      )}
+      {/* Global Modals in Suspense */}
+      <Suspense fallback={null}>
+        {isBillingModalOpen && (
+          <BillingModal
+            isOpen={isBillingModalOpen}
+            onClose={() => setIsBillingModalOpen(false)}
+          />
+        )}
 
-      {isAddRecordModalOpen && (
-        <AddRecordModal
-          onClose={() => setIsAddRecordModalOpen(false)}
-          onAddExam={handleAddExam}
-          onAddMetric={handleAddMetric}
-          onAddMedication={handleAddMedication}
-          onAddRecord={handleAddRecord}
-          onAddVaccine={handleAddVaccine}
-          onAddAllergy={handleAddAllergy}
-        />
-      )}
+        {isAuthModalOpen && (
+          <AuthModal
+            isOpen={isAuthModalOpen}
+            onClose={() => setIsAuthModalOpen(false)}
+          />
+        )}
 
+        {isExportDossierOpen && (
+          <ExportDossierModal
+            isOpen={isExportDossierOpen}
+            onClose={() => setIsExportDossierOpen(false)}
+            profile={profile}
+            activeMember={activeMember}
+            exams={exams}
+            indicators={indicators}
+            medications={medications}
+            records={records}
+          />
+        )}
+
+        {isFamilyModalOpen && (
+          <FamilyProfilesModal
+            isOpen={isFamilyModalOpen}
+            onClose={() => setIsFamilyModalOpen(false)}
+            members={familyMembers}
+            activeMemberId={activeMemberId}
+            onSelectMember={handleSelectFamilyMember}
+            onAddMember={(newM) => {
+              saveFamilyMember(newM);
+              refreshAllData();
+            }}
+            onDeleteMember={(id) => {
+              deleteFamilyMember(id);
+              refreshAllData();
+            }}
+          />
+        )}
+
+        {isOnboardingModalOpen && (
+          <HealthOnboardingModal
+            isOpen={isOnboardingModalOpen}
+            onClose={() => setIsOnboardingModalOpen(false)}
+            targetType="user"
+            initialName={profile?.full_name || ""}
+            onSaveCompleted={(data) => {
+              refreshAllData();
+              alert("Prontuário e anamnese inicial cadastrados com sucesso!");
+            }}
+          />
+        )}
+      </Suspense>
     </div>
   );
+};
+
+export function App() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <MainAppContent />
+      </AuthProvider>
+    </ThemeProvider>
+  );
 }
+
+export default App;

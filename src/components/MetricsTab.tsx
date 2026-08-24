@@ -10,7 +10,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Minus,
-  Sparkles,
   Gauge,
   History
 } from 'lucide-react';
@@ -274,7 +273,7 @@ export const MetricsTab: React.FC<MetricsTabProps> = ({
 
         <div className="flex items-center gap-2">
           <div className="px-3 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300 flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+            <Activity className="w-3.5 h-3.5 text-teal-400" />
             <span className="font-semibold text-white">{metrics.length}</span> medições no total
           </div>
         </div>

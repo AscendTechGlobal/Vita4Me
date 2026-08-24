@@ -13,7 +13,6 @@ import {
   BellOff,
   Volume2,
   VolumeX,
-  Sparkles,
   Timer,
   Check,
   History,
@@ -215,7 +214,7 @@ export const MedicationsTab: React.FC<MedicationsTabProps> = ({
       {testFeedback && (
         <div className="p-3.5 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-200 text-xs flex items-center justify-between animate-in fade-in duration-200">
           <div className="flex items-center gap-2 font-medium">
-            <Sparkles className="w-4 h-4 text-teal-400 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
             <span>{testFeedback}</span>
           </div>
           <button

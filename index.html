@@ -1,13 +1,117 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/logo-icon-transparent.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#0A3B2E" />
+    <title>Vita4Me | Organize seus exames e acompanhe sua saúde</title>
+    <meta name="description" content="Organize exames laboratoriais, acompanhe indicadores vitais, controle medicamentos e entenda laudos médicos com o apoio da inteligência artificial do Vita4Me." />
+    <meta name="keywords" content="prontuario digital, organizar exames, historico de saude, exames laboratoriais, tradutor de laudos, biomarcadores, dossie de saude, vita4me" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <link rel="canonical" href="https://vita4me.app/" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://vita4me.app/" />
+    <meta property="og:site_name" content="Vita4Me" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:title" content="Vita4Me | Organize seus exames e acompanhe sua saúde" />
+    <meta property="og:description" content="Organize exames laboratoriais, acompanhe indicadores vitais, controle medicamentos e entenda laudos médicos com o apoio da inteligência artificial do Vita4Me." />
+    <meta property="og:image" content="https://vita4me.app/logo-full-transparent.png" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://vita4me.app/" />
+    <meta name="twitter:title" content="Vita4Me | Organize seus exames e acompanhe sua saúde" />
+    <meta name="twitter:description" content="Organize exames laboratoriais, acompanhe indicadores vitais, controle medicamentos e entenda laudos médicos com o apoio da inteligência artificial do Vita4Me." />
+    <meta name="twitter:image" content="https://vita4me.app/logo-full-transparent.png" />
+
+    <!-- Schema.org JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://vita4me.app/#website",
+          "url": "https://vita4me.app/",
+          "name": "Vita4Me",
+          "description": "Plataforma inteligente de prontuário pessoal e organização de exames de saúde.",
+          "inLanguage": "pt-BR"
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://vita4me.app/#organization",
+          "name": "Vita4Me",
+          "url": "https://vita4me.app/",
+          "logo": "https://vita4me.app/logo-full-transparent.png",
+          "sameAs": []
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://vita4me.app/#software",
+          "name": "Vita4Me",
+          "applicationCategory": "HealthApplication",
+          "operatingSystem": "Web, iOS, Android",
+          "description": "Prontuário pessoal digital e inteligência artificial para organização e compreensão de exames e indicadores de saúde.",
+          "offers": {
+            "@type": "Offer",
+            "price": "0.00",
+            "priceCurrency": "BRL",
+            "description": "Acesso gratuito com planos premium a partir de R$ 29,90/mês"
+          }
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://vita4me.app/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "O que é o Vita4Me?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "O Vita4Me é uma plataforma inteligente de prontuário pessoal e familiar que centraliza exames laboratoriais, indicadores, medicamentos e consultas em uma linha do tempo única."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "O Vita4Me substitui consultas ou diagnósticos médicos?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Não. O Vita4Me é uma tecnologia de organização e letramento em saúde. Nossa inteligência artificial não faz diagnósticos, não prescreve remédios e não substitui consultas médicas profissionais."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Como funciona a tradução de exames laboratoriais por IA?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "O sistema lê os biomarcadores do exame e explica em português simples o significado dos valores de referência e pontos relevantes para discutir com seu médico."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Os dados de saúde estão protegidos pela LGPD?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Sim. Todos os dados são criptografados em repouso e em trânsito com padrões de segurança hospitalar, controle de acesso estrito e total conformidade com a LGPD."
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   </head>
-  <body>
+  <body class="bg-slate-950 text-slate-100 antialiased font-sans">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

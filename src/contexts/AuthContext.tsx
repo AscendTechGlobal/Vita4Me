@@ -1,183 +1,205 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { 
-  User, 
-  signInWithPopup, 
-  signOut as fbSignOut, 
-  onAuthStateChanged,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  updateProfile
-} from 'firebase/auth';
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  collection, 
-  getDocs, 
-  onSnapshot 
-} from 'firebase/firestore';
-import { auth, db, googleProvider } from '../lib/firebase';
-import { UserProfile, Exam, MedicalRecord, MetricEntry, Medication, Vaccine, Allergy, DailyHabits, DocumentItem } from '../types';
-import { 
-  initialUserProfile, 
-  initialExams, 
-  initialMedicalRecords, 
-  initialMetrics, 
-  initialMedications, 
-  initialVaccines, 
-  initialAllergies, 
-  initialDailyHabits, 
-  initialDocuments 
-} from '../data/initialData';
+import { User } from '@supabase/supabase-js';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { UserProfile } from '../types';
 
 interface AuthContextType {
-  currentUser: User | null;
-  userProfile: UserProfile;
-  loading: boolean;
-  signInWithGoogle: () => Promise<void>;
-  signInWithEmail: (email: string, pass: string) => Promise<void>;
-  signUpWithEmail: (email: string, pass: string, name: string) => Promise<void>;
+  user: User | null;
+  profile: UserProfile | null;
+  isLoading: boolean;
+  isConfigured: boolean;
+  isPasswordRecovery: boolean;
+  setIsPasswordRecovery: (value: boolean) => void;
+  signInWithEmail: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUpWithEmail: (email: string, password: string, fullName?: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
-  updateUserProfile: (profile: Partial<UserProfile>) => Promise<void>;
-  isFirebaseConnected: boolean;
+  resetPasswordForEmail: (email: string) => Promise<{ error: string | null }>;
+  updateUserPassword: (password: string) => Promise<{ error: string | null }>;
+  loginAsDemo: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const DEMO_USER: any = {
+  id: 'demo-user-healthai',
+  email: 'usuario@healthai.app',
+  user_metadata: { full_name: 'Eduardo Weber (Demo)' },
+};
+
+const DEMO_PROFILE: UserProfile = {
+  id: 'demo-user-vita4me',
+  email: 'usuario@vita4me.app',
+  full_name: 'Eduardo Weber (Demo)',
+  blood_type: 'O+',
+  date_of_birth: '1988-06-14',
+  gender: 'Masculino',
+  emergency_contact_name: 'Camila Weber',
+  emergency_contact_phone: '+55 11 98888-7777',
+  plan_tier: 'individual',
+  subscription_status: 'inactive',
+  ai_credits: 0,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile>(initialUserProfile);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+
+  const fetchProfile = async (userId: string, userEmail?: string, fullNameMeta?: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error && error.code === 'PGRST116') {
+        // Profile not created yet, create it with inactive subscription until Stripe confirms
+        const newProfile: Partial<UserProfile> = {
+          id: userId,
+          email: userEmail || '',
+          full_name: fullNameMeta || userEmail?.split('@')[0] || 'Usuário Vita4Me',
+          plan_tier: 'individual',
+          subscription_status: 'inactive',
+          ai_credits: 0,
+        };
+        const { data: created } = await supabase
+          .from('profiles')
+          .insert(newProfile)
+          .select()
+          .single();
+        if (created) setProfile(created as UserProfile);
+      } else if (data) {
+        setProfile(data as UserProfile);
+      }
+    } catch (err) {
+      console.error('Error fetching profile:', err);
+    }
+  };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        setIsFirebaseConnected(true);
-        try {
-          const userDocRef = doc(db, 'users', user.uid);
-          const docSnap = await getDoc(userDocRef);
+    // Check URL for recovery tokens
+    if (window.location.hash.includes('type=recovery')) {
+      setIsPasswordRecovery(true);
+    }
 
-          if (docSnap.exists()) {
-            setUserProfile(docSnap.data() as UserProfile);
-          } else {
-            // First time user login -> initialize Firestore with defaults
-            const newProfile: UserProfile = {
-              ...initialUserProfile,
-              name: user.displayName || user.email?.split('@')[0] || 'Usuário HealthAI',
-              email: user.email || initialUserProfile.email,
-            };
-            await setDoc(userDocRef, newProfile);
-            setUserProfile(newProfile);
-          }
-        } catch (error) {
-          console.warn('Firestore profile sync error (using local state):', error);
-          if (user.displayName || user.email) {
-            setUserProfile((prev) => ({
-              ...prev,
-              name: user.displayName || prev.name,
-              email: user.email || prev.email,
-            }));
-          }
-        }
-      } else {
-        // Logged out
-        setIsFirebaseConnected(false);
-        setUserProfile(initialUserProfile);
+    if (!isSupabaseConfigured) {
+      const isDemoLoggedIn = localStorage.getItem('healthai_demo_auth') === 'true';
+      if (isDemoLoggedIn) {
+        setUser(DEMO_USER);
+        setProfile(DEMO_PROFILE);
       }
-      setLoading(false);
+      setIsLoading(false);
+      return;
+    }
+
+    // Get current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        fetchProfile(session.user.id, session.user.email, session.user.user_metadata?.full_name);
+      }
+      setIsLoading(false);
     });
 
-    return () => unsubscribe();
+    // Listen to Auth State Changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true);
+      }
+
+      if (session?.user) {
+        setUser(session.user);
+        fetchProfile(session.user.id, session.user.email, session.user.user_metadata?.full_name);
+      } else {
+        setUser(null);
+        setProfile(null);
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const signInWithGoogle = async () => {
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
-      if (user) {
-        const userDocRef = doc(db, 'users', user.uid);
-        const docSnap = await getDoc(userDocRef);
-        if (!docSnap.exists()) {
-          const newProfile: UserProfile = {
-            ...initialUserProfile,
-            name: user.displayName || 'Usuário HealthAI',
-            email: user.email || '',
-          };
-          await setDoc(userDocRef, newProfile);
-          setUserProfile(newProfile);
-        }
-      }
-    } catch (err: unknown) {
-      console.error('Google Sign In Error:', err);
-      throw err;
+  const signInWithEmail = async (email: string, password: string) => {
+    if (!isSupabaseConfigured) {
+      loginAsDemo();
+      return { error: null };
     }
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    return { error: error ? error.message : null };
   };
 
-  const signInWithEmail = async (email: string, pass: string) => {
-    try {
-      await signInWithEmailAndPassword(auth, email, pass);
-    } catch (err: unknown) {
-      console.error('Email Sign In Error:', err);
-      throw err;
+  const signUpWithEmail = async (email: string, password: string, fullName?: string) => {
+    if (!isSupabaseConfigured) {
+      loginAsDemo();
+      return { error: null };
     }
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName },
+      },
+    });
+    return { error: error ? error.message : null };
   };
 
-  const signUpWithEmail = async (email: string, pass: string, name: string) => {
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      if (cred.user) {
-        await updateProfile(cred.user, { displayName: name });
-        const newProfile: UserProfile = {
-          ...initialUserProfile,
-          name,
-          email,
-        };
-        const userDocRef = doc(db, 'users', cred.user.uid);
-        await setDoc(userDocRef, newProfile);
-        setUserProfile(newProfile);
-      }
-    } catch (err: unknown) {
-      console.error('Email Sign Up Error:', err);
-      throw err;
+  const resetPasswordForEmail = async (email: string) => {
+    if (!isSupabaseConfigured) {
+      alert("No modo de demonstração local, a recuperação de senha é simulada com sucesso.");
+      return { error: null };
     }
+    const redirectUrl = `${window.location.origin}/#reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl,
+    });
+    return { error: error ? error.message : null };
+  };
+
+  const updateUserPassword = async (password: string) => {
+    if (!isSupabaseConfigured) {
+      return { error: null };
+    }
+    const { error } = await supabase.auth.updateUser({ password });
+    return { error: error ? error.message : null };
   };
 
   const signOut = async () => {
-    try {
-      await fbSignOut(auth);
-    } catch (err) {
-      console.error('Sign Out Error:', err);
+    localStorage.removeItem('healthai_demo_auth');
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut();
     }
+    setUser(null);
+    setProfile(null);
   };
 
-  const updateUserProfile = async (partial: Partial<UserProfile>) => {
-    const updated = { ...userProfile, ...partial };
-    setUserProfile(updated);
-
-    if (currentUser) {
-      try {
-        const userDocRef = doc(db, 'users', currentUser.uid);
-        await setDoc(userDocRef, updated, { merge: true });
-      } catch (err) {
-        console.warn('Could not sync user profile update to Firestore:', err);
-      }
-    }
+  const loginAsDemo = () => {
+    localStorage.setItem('healthai_demo_auth', 'true');
+    setUser(DEMO_USER);
+    setProfile(DEMO_PROFILE);
   };
 
   return (
     <AuthContext.Provider
       value={{
-        currentUser,
-        userProfile,
-        loading,
-        signInWithGoogle,
+        user,
+        profile,
+        isLoading,
+        isConfigured: isSupabaseConfigured,
+        isPasswordRecovery,
+        setIsPasswordRecovery,
         signInWithEmail,
         signUpWithEmail,
         signOut,
-        updateUserProfile,
-        isFirebaseConnected,
+        resetPasswordForEmail,
+        updateUserPassword,
+        loginAsDemo,
       }}
     >
       {children}
@@ -185,10 +207,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
-export const useAuth = (): AuthContextType => {
+export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
   }
   return context;
 };

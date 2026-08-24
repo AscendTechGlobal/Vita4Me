@@ -2,7 +2,6 @@ import React from 'react';
 import { 
   Building2, 
   ShieldCheck, 
-  Sparkles, 
   UserCheck, 
   Award, 
   Check, 
@@ -27,14 +26,13 @@ export const InstitutionalTab: React.FC<InstitutionalTabProps> = ({ userProfile 
         <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
         
         <div className="relative z-10 space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
-            <Building2 className="w-3.5 h-3.5" />
-            <span>Dossier Institucional Completo • Versão 1.0</span>
+          <div className="flex items-center gap-4">
+            <img
+              src="/logo-full-transparent.png"
+              alt="Vita4Me Logo"
+              className="h-16 w-auto object-contain bg-white/10 dark:bg-white/5 p-2 rounded-2xl border border-white/10"
+            />
           </div>
-
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">
-            HEALTH<span className="text-emerald-400">.AI</span>
-          </h1>
 
           <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
             Corporate Profile & Institutional Dossier. Uma plataforma inteligente criada para organizar, explicar e preservar toda a história clínica e de bem-estar de uma pessoa durante a vida toda.
@@ -51,8 +49,8 @@ export const InstitutionalTab: React.FC<InstitutionalTabProps> = ({ userProfile 
       {/* 1. Carta Institucional & Manifesto */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-emerald-400" />
-          <span>1. Carta Institucional & Manifesto HealthAI</span>
+          <Award className="w-5 h-5 text-emerald-400" />
+          <span>1. Carta Institucional & Manifesto Vita4Me</span>
         </h2>
 
         <div className="prose prose-invert max-w-none text-xs text-slate-300 space-y-3 leading-relaxed">
@@ -60,11 +58,11 @@ export const InstitutionalTab: React.FC<InstitutionalTabProps> = ({ userProfile 
             A saúde é um dos ativos mais importantes da vida. Entretanto, mesmo vivendo em uma era marcada pela tecnologia, milhões de pessoas ainda mantêm sua própria história médica espalhada entre hospitais, clínicas, laboratórios, aplicativos diferentes e documentos físicos.
           </p>
           <p>
-            Resultados de exames são esquecidos. Receitas médicas se perdem. Consultas deixam de ser registradas. O problema nunca foi a falta de informação, o verdadeiro desafio sempre foi organizá-la. A HealthAI nasceu para mudar essa realidade.
+            Resultados de exames são esquecidos. Receitas médicas se perdem. Consultas deixam de ser registradas. O problema nunca foi a falta de informação, o verdadeiro desafio sempre foi organizá-la. A Vita4Me nasceu para mudar essa realidade.
           </p>
 
           <div className="p-4 rounded-xl bg-slate-950 border border-emerald-500/30 text-emerald-200 font-medium">
-            "A HealthAI não realiza diagnósticos. Não substitui médicos. Não prescreve medicamentos. Nossa missão é organizar, explicar e apresentar informações de forma clara, responsável e segura, permitindo que cada pessoa tenha maior controle sobre sua própria jornada de saúde."
+            "A Vita4Me não realiza diagnósticos. Não substitui médicos. Não prescreve medicamentos. Nossa missão é organizar, explicar e apresentar informações de forma clara, responsável e segura, permitindo que cada pessoa tenha maior controle sobre sua própria jornada de saúde."
           </div>
         </div>
       </div>
@@ -104,44 +102,35 @@ export const InstitutionalTab: React.FC<InstitutionalTabProps> = ({ userProfile 
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl">
           
-          {/* Free */}
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-            <span className="text-xs font-bold text-slate-400 uppercase">Free</span>
-            <div className="text-lg font-extrabold text-white">R$ 0</div>
-            <p className="text-[11px] text-slate-400 leading-snug">
-              Ideal para iniciar a organização da própria saúde. Inclui armazenamento de documentos e histórico básico.
-            </p>
-          </div>
-
-          {/* Plus (Current) */}
-          <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border-2 border-emerald-500 space-y-2 relative">
-            <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded text-[9px] font-extrabold uppercase bg-emerald-500 text-slate-950">
-              Plano Atual
+          {/* Individual */}
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border-2 border-emerald-500 space-y-3 relative">
+            <span className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500 text-slate-950">
+              7 Dias Grátis
             </span>
-            <span className="text-xs font-bold text-emerald-400 uppercase">Plus</span>
-            <div className="text-lg font-extrabold text-white">R$ 29<span className="text-xs font-normal text-slate-400">/mês</span></div>
-            <p className="text-[11px] text-slate-300 leading-snug">
-              Recursos avançados de IA (Tradutor de Exames, Assistente Chatbot), dashboards completos de indicadores.
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-emerald-400 uppercase">Individual</span>
+              <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">1 Perfil</span>
+            </div>
+            <div className="text-2xl font-extrabold text-white">R$ 29<span className="text-xs font-normal text-slate-400">/mês</span></div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Prontuário completo com <strong>Assistente de IA incluído</strong> (sujeito à Política de Uso Justo), Tradutor de Exames e Dossiê Médico em PDF.
             </p>
           </div>
 
           {/* Family */}
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-            <span className="text-xs font-bold text-teal-400 uppercase">Family</span>
-            <div className="text-lg font-extrabold text-white">R$ 59<span className="text-xs font-normal text-slate-400">/mês</span></div>
-            <p className="text-[11px] text-slate-400 leading-snug">
-              Centraliza a saúde de toda a família (até 6 membros) mantendo perfis individuais e gestão compartilhada.
-            </p>
-          </div>
-
-          {/* Professional */}
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2 opacity-75">
-            <span className="text-xs font-bold text-amber-400 uppercase">Professional</span>
-            <div className="text-xs font-bold text-slate-400">Roadmap</div>
-            <p className="text-[11px] text-slate-400 leading-snug">
-              Voltado para profissionais de saúde compartilharem laudos com seus pacientes com controle do usuário.
+          <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 relative">
+            <span className="absolute -top-2.5 right-4 px-2.5 py-0.5 rounded text-[10px] font-black uppercase bg-teal-500 text-slate-950">
+              Mais Popular • 7 Dias Grátis
+            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-teal-400 uppercase">Família</span>
+              <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">Até 5 Membros</span>
+            </div>
+            <div className="text-2xl font-extrabold text-white">R$ 59<span className="text-xs font-normal text-slate-400">/mês</span></div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Centraliza a saúde de toda a família (até 5 membros) com <strong>Assistente de IA incluído para toda a família</strong> (sujeito à Política de Uso Justo).
             </p>
           </div>
 
@@ -157,7 +146,7 @@ export const InstitutionalTab: React.FC<InstitutionalTabProps> = ({ userProfile 
             </div>
           </div>
           <h3 className="text-base font-bold text-white">Eduardo Weber</h3>
-          <p className="text-xs text-emerald-400 font-medium">Fundador da HealthAI</p>
+          <p className="text-xs text-emerald-400 font-medium">Fundador da Vita4Me</p>
         </div>
 
         <div className="md:col-span-2 text-xs text-slate-300 space-y-2 leading-relaxed">

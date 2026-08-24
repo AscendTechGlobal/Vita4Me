@@ -1,0 +1,22 @@
+{
+  "name": "Vita4Me — Prontuário Inteligente & IA de Saúde",
+  "short_name": "Vita4Me",
+  "description": "Centralize seus exames laboratoriais, traduza laudos médicos com inteligência artificial e gere dossiês para consultas.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#061F18",
+  "theme_color": "#0A3B2E",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/logo-icon-transparent.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo-icon-transparent.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

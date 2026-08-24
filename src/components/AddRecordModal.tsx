@@ -56,7 +56,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
         values: [
           { name: title, value: value || 'Normal', unit: '', referenceRange: 'Normal', status: 'Normal' }
         ],
-        summary: notes || 'Exame registrado com sucesso pelo usuário no aplicativo HealthAI.',
+        summary: notes || 'Exame registrado com sucesso pelo usuário no aplicativo Vita4Me.',
         translatedExplanation: 'Exame registrado de forma manual. Seus indicadores foram mantidos na linha do tempo.'
       });
     } else if (recordType === 'metric') {

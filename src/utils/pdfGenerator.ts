@@ -70,7 +70,7 @@ export function generateHealthSummaryPDF(data: HealthReportData): jsPDF {
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(20);
-  doc.text('HEALTH.AI', margin, 17);
+  doc.text('VITA4ME', margin, 17);
 
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
@@ -83,14 +83,17 @@ export function generateHealthSummaryPDF(data: HealthReportData): jsPDF {
   doc.setTextColor(255, 255, 255);
   doc.text('Dossiê & Resumo Clínico de Saúde', pageWidth - margin, 16, { align: 'right' });
 
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(148, 163, 184); // slate-400
+  doc.setTextColor(203, 213, 225); // slate-300
   const emissionDate = new Date().toLocaleDateString('pt-BR', { 
     day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' 
   });
   doc.text(`Emitido em: ${emissionDate}`, pageWidth - margin, 22, { align: 'right' });
-  const secureId = `HAI-${userProfile.cpf.replace(/[^0-9]/g, '').slice(0, 6)}-${Date.now().toString().slice(-4)}`;
+  const patientName = (userProfile as any).name || userProfile.full_name || 'Paciente';
+  const rawCpf = (userProfile as any).cpf || '';
+  const cleanCpf = rawCpf ? rawCpf.replace(/[^0-9]/g, '').slice(0, 6) : (userProfile.id ? userProfile.id.slice(0, 6) : '000000');
+  const secureId = `V4M-${cleanCpf}-${Date.now().toString().slice(-4)}`;
   doc.text(`ID de Validação: ${secureId}`, pageWidth - margin, 27, { align: 'right' });
 
   let currentY = 44;
@@ -104,21 +107,30 @@ export function generateHealthSummaryPDF(data: HealthReportData): jsPDF {
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
-    doc.text(`Paciente: ${userProfile.name}`, margin + 4, currentY + 7);
+    doc.text(`Paciente: ${patientName}`, margin + 4, currentY + 7);
 
     doc.setFontSize(8.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(51, 65, 85);
-    doc.text(`CPF: ${userProfile.cpf}`, margin + 4, currentY + 13);
-    doc.text(`Idade: ${userProfile.age} anos • Altura: ${userProfile.heightCm} cm • Peso: ${userProfile.weightKg} kg`, margin + 4, currentY + 19);
+    doc.text(`CPF: ${rawCpf || 'Protegido / Cadastrado'}`, margin + 4, currentY + 13);
+    
+    const height = userProfile.height_cm || (userProfile as any).heightCm || '--';
+    const weight = userProfile.weight_kg || (userProfile as any).weightKg || '--';
+    const birthOrAge = (userProfile as any).age 
+      ? `${(userProfile as any).age} anos` 
+      : (userProfile.date_of_birth ? `Nascimento: ${userProfile.date_of_birth}` : '');
+    
+    doc.text(`${birthOrAge ? birthOrAge + ' • ' : ''}Altura: ${height} cm • Peso: ${weight} kg`, margin + 4, currentY + 19);
 
-    doc.text(`Tipo Sanguíneo: ${userProfile.bloodType}`, margin + 85, currentY + 13);
-    doc.text(`Gênero: ${userProfile.gender}`, margin + 85, currentY + 19);
+    doc.text(`Tipo Sanguíneo: ${userProfile.blood_type || (userProfile as any).bloodType || 'Não informado'}`, margin + 85, currentY + 13);
+    doc.text(`Gênero: ${userProfile.gender || 'Não informado'}`, margin + 85, currentY + 19);
 
-    doc.text(`Plano: HealthAI ${userProfile.plan}`, margin + 130, currentY + 13);
-    const emergencyInfo = userProfile.emergencyContact 
-      ? `${userProfile.emergencyContact.name} (${userProfile.emergencyContact.phone})` 
-      : 'Não cadastrado';
+    const plan = userProfile.plan_tier || (userProfile as any).plan || 'Individual';
+    doc.text(`Plano: Vita4Me ${plan}`, margin + 130, currentY + 13);
+    
+    const emergencyName = userProfile.emergency_contact_name || (userProfile as any).emergencyContact?.name;
+    const emergencyPhone = userProfile.emergency_contact_phone || (userProfile as any).emergencyContact?.phone;
+    const emergencyInfo = emergencyName ? `${emergencyName} (${emergencyPhone || ''})` : 'Não cadastrado';
     doc.text(`Emergência: ${emergencyInfo}`, margin + 130, currentY + 19);
 
     currentY += 32;
@@ -421,12 +433,12 @@ export function generateHealthSummaryPDF(data: HealthReportData): jsPDF {
   doc.setFont('helvetica', 'italic');
   doc.setTextColor(100, 116, 139); // slate-500
   doc.text(
-    'Nota de Isenção e Ética HealthAI: Este documento é um resumo informativo e cronológico gerado a partir dos dados inseridos pelo paciente.',
+    'Nota de Isenção e Ética Vita4Me: Este documento é um resumo informativo e cronológico gerado a partir dos dados inseridos pelo paciente.',
     margin + 3,
     currentY + 6
   );
   doc.text(
-    'A HealthAI não realiza diagnósticos médicos, não prescreve medicamentos e não substitui o julgamento clínico presencial de um médico.',
+    'A Vita4Me não realiza diagnósticos médicos, não prescreve medicamentos e não substitui o julgamento clínico presencial de um médico.',
     margin + 3,
     currentY + 11
   );
@@ -439,7 +451,7 @@ export function generateHealthSummaryPDF(data: HealthReportData): jsPDF {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(148, 163, 184); // slate-400
     doc.text(
-      `HealthAI • Documento Seguro • Paciente: ${userProfile.name} • Página ${i} de ${totalPages}`,
+      `Vita4Me • Documento Seguro • Paciente: ${userProfile.name} • Página ${i} de ${totalPages}`,
       pageWidth / 2,
       pageHeight - 6,
       { align: 'center' }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Stethoscope, 
-  Sparkles, 
+  FileCheck,
   Calendar, 
   UserCheck, 
   Building, 
@@ -13,6 +13,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { MedicalRecord, UserProfile, Exam, Medication } from '../types';
+import { getAuthHeaders } from '../lib/apiClient';
 
 interface AppointmentsTabProps {
   medicalRecords: MedicalRecord[];
@@ -60,9 +61,10 @@ export const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
     setIsLoadingPrep(true);
 
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch('/api/gemini/prep-consultation', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           doctorName: prepDoctor,
           specialty: prepSpecialty,
@@ -106,7 +108,7 @@ export const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
       {/* AI Consultation Preparation Box */}
       <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-teal-500/30 rounded-2xl p-6 shadow-xl space-y-5">
         <div className="flex items-center gap-2 text-teal-300">
-          <Sparkles className="w-5 h-5 text-teal-400 animate-pulse" />
+          <Stethoscope className="w-5 h-5 text-teal-400" />
           <h2 className="text-base font-bold text-white">Assistente de Preparação para Consulta Médica</h2>
         </div>
 
@@ -160,8 +162,8 @@ export const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4" />
-                  <span>Gerar Roteiro e Perguntas para a Consulta com IA</span>
+                  <FileCheck className="w-4 h-4" />
+                  <span>Gerar Roteiro e Perguntas para a Consulta</span>
                 </>
               )}
             </button>

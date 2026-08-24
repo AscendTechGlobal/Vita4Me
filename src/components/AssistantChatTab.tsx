@@ -2,13 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Bot, 
   Send, 
-  Sparkles, 
   User, 
   ShieldCheck, 
   Loader2,
   RefreshCw
 } from 'lucide-react';
 import { ChatMessage, UserProfile, Exam, MedicalRecord, Medication, Vaccine, DailyHabits } from '../types';
+import { getAuthHeaders } from '../lib/apiClient';
 
 interface AssistantChatTabProps {
   userProfile: UserProfile;
@@ -31,7 +31,7 @@ export const AssistantChatTab: React.FC<AssistantChatTabProps> = ({
     {
       id: 'msg-0',
       sender: 'assistant',
-      text: `Olá, ${userProfile.name.split(' ')[0]}! Sou o **Assistente Inteligente HealthAI**.\n\nTenho acesso direto e seguro a todo o seu histórico de saúde cadastrado (${exams.length} exames, receitas, consultas e vacinas).\n\nComo posso ajudar você hoje?`,
+      text: `Olá, ${userProfile.name.split(' ')[0]}! Sou o **Assistente Inteligente Vita4Me**.\n\nTenho acesso direto e seguro a todo o seu histórico de saúde cadastrado (${exams.length} exames, receitas, consultas e vacinas).\n\nComo posso ajudar você hoje?`,
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       suggestedActions: [
         "Quando fiz meu último exame de sangue?",
@@ -71,9 +71,10 @@ export const AssistantChatTab: React.FC<AssistantChatTabProps> = ({
     setIsTyping(true);
 
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch('/api/gemini/assistant', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           message: prompt,
           history: messages.slice(-6), // Send last few messages for context
@@ -107,7 +108,7 @@ export const AssistantChatTab: React.FC<AssistantChatTabProps> = ({
       const errorMsg: ChatMessage = {
         id: `msg-${Date.now() + 1}`,
         sender: 'assistant',
-        text: "Desculpe, ocorreu uma instabilidade ao consultar o assistente da HealthAI. Por favor, tente novamente.",
+        text: "Desculpe, ocorreu uma instabilidade ao consultar o assistente da Vita4Me. Por favor, tente novamente.",
         timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, errorMsg]);
@@ -122,15 +123,17 @@ export const AssistantChatTab: React.FC<AssistantChatTabProps> = ({
       {/* Header */}
       <div className="bg-slate-950 border-b border-slate-800 p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 p-0.5 flex items-center justify-center shadow-md">
-            <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center text-teal-400">
-              <Bot className="w-5 h-5 animate-pulse" />
-            </div>
+          <div className="w-9 h-9 rounded-xl bg-white dark:bg-slate-800 border border-emerald-500/20 p-1 flex items-center justify-center shrink-0 shadow-xs">
+            <img
+              src="/logo-icon-transparent.png"
+              alt="Vita4Me AI"
+              className="w-full h-full object-contain"
+            />
           </div>
           <div>
             <h1 className="text-sm font-bold text-white flex items-center gap-2">
-              Assistente IA HealthAI
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30 uppercase">
+              Assistente IA Vita4Me
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase">
                 Gemini 3.6
               </span>
             </h1>
@@ -163,9 +166,17 @@ export const AssistantChatTab: React.FC<AssistantChatTabProps> = ({
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
               msg.sender === 'user' 
                 ? 'bg-emerald-500 text-slate-950 font-bold text-xs' 
-                : 'bg-slate-800 text-teal-400 border border-slate-700'
+                : 'bg-white dark:bg-slate-800 p-1 border border-emerald-500/20'
             }`}>
-              {msg.sender === 'user' ? 'EW' : <Bot className="w-4 h-4" />}
+              {msg.sender === 'user' ? (
+                'EW'
+              ) : (
+                <img
+                  src="/logo-icon-transparent.png"
+                  alt="Vita4Me AI"
+                  className="w-full h-full object-contain"
+                />
+              )}
             </div>
 
             {/* Content Box */}
@@ -245,7 +256,7 @@ export const AssistantChatTab: React.FC<AssistantChatTabProps> = ({
         </form>
 
         <p className="text-[10px] text-slate-500 text-center mt-2">
-          A HealthAI não realiza diagnósticos e não substitui o atendimento de médicos.
+          A Vita4Me não realiza diagnósticos e não substitui o atendimento de médicos.
         </p>
       </div>
 

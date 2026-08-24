@@ -7,10 +7,11 @@ import {
   Tag, 
   Calendar, 
   UserCheck, 
-  Sparkles,
   Loader2
 } from 'lucide-react';
 import { DocumentItem } from '../types';
+import { getAuthHeaders } from '../lib/apiClient';
+import { trackEvent, trackAiUsage } from '../lib/analytics';
 
 interface DocumentsTabProps {
   documents: DocumentItem[];
@@ -34,9 +35,10 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({
     setIsAnalyzing(true);
     setTimeout(async () => {
       try {
+        const headers = await getAuthHeaders();
         const response = await fetch('/api/gemini/analyze-document', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             documentText: 'Atestado de Aptidão Física e Licença Esportiva assinado por Dra. Patricia Lima em 10/03/2026.'
           })
@@ -57,6 +59,8 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({
         };
 
         onAddDocument(newDoc);
+        trackEvent('document_uploaded', { category: 'Atestado' });
+        trackAiUsage('doc_analysis');
       } catch (err) {
         console.error("Erro ao analisar documento:", err);
       } finally {

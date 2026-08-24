@@ -1,127 +1,171 @@
-import React from 'react';
-import { 
-  LayoutDashboard, 
-  FileText, 
-  TrendingUp, 
-  Stethoscope, 
-  Pill, 
-  Syringe, 
-  AlertTriangle, 
-  HeartPulse, 
-  FolderLock, 
-  Bot, 
-  Building2,
+import React from "react";
+import {
+  Heart,
+  LayoutDashboard,
+  FileText,
+  Activity,
+  Calendar,
+  Pill,
+  Droplet,
+  MessageSquare,
+  Settings,
   ShieldCheck,
-  ChevronRight
-} from 'lucide-react';
+  Crown,
+  X
+} from "lucide-react";
+import { Logo } from "./Logo";
 
-export type ActiveTab = 
-  | 'overview' 
-  | 'exams' 
-  | 'metrics' 
-  | 'appointments' 
-  | 'medications' 
-  | 'vaccines' 
-  | 'allergies' 
-  | 'habits' 
-  | 'documents' 
-  | 'assistant' 
-  | 'institutional';
+export type ActiveTab =
+  | "overview"
+  | "exams"
+  | "indicators"
+  | "timeline"
+  | "medications"
+  | "habits"
+  | "chat"
+  | "settings";
 
 interface SidebarProps {
-  activeTab: ActiveTab;
-  setActiveTab: (tab: ActiveTab) => void;
+  currentTab: ActiveTab;
+  onNavigate: (tab: ActiveTab) => void;
+  isOpenMobile: boolean;
+  onCloseMobile: () => void;
+  onOpenBillingModal: () => void;
   examsCount: number;
   medicationsCount: number;
-  vaccinesPendingCount: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  activeTab,
-  setActiveTab,
+  currentTab,
+  onNavigate,
+  isOpenMobile,
+  onCloseMobile,
+  onOpenBillingModal,
   examsCount,
   medicationsCount,
-  vaccinesPendingCount
 }) => {
-  const menuItems = [
-    { id: 'overview' as ActiveTab, label: 'Painel Geral', icon: LayoutDashboard },
-    { id: 'exams' as ActiveTab, label: 'Central de Exames', icon: FileText, badge: examsCount },
-    { id: 'metrics' as ActiveTab, label: 'Indicadores de Saúde', icon: TrendingUp },
-    { id: 'appointments' as ActiveTab, label: 'Consultas & Preparação', icon: Stethoscope },
-    { id: 'medications' as ActiveTab, label: 'Medicamentos & Lembretes', icon: Pill, badge: medicationsCount },
-    { id: 'vaccines' as ActiveTab, label: 'Vacinação', icon: Syringe, badgeWarning: vaccinesPendingCount > 0 ? `${vaccinesPendingCount} pendente` : undefined },
-    { id: 'allergies' as ActiveTab, label: 'Alergias & Cirurgias', icon: AlertTriangle },
-    { id: 'habits' as ActiveTab, label: 'Hábitos & Bem-estar', icon: HeartPulse },
-    { id: 'documents' as ActiveTab, label: 'Documentos Médicos', icon: FolderLock },
-    { id: 'assistant' as ActiveTab, label: 'Assistente IA HealthAI', icon: Bot, isAi: true },
-    { id: 'institutional' as ActiveTab, label: 'Sobre a HealthAI', icon: Building2 }
+  const navItems = [
+    { id: "overview" as ActiveTab, label: "Visão Geral 360°", icon: LayoutDashboard },
+    { id: "exams" as ActiveTab, label: "Central de Exames (IA)", icon: FileText, badge: examsCount },
+    { id: "indicators" as ActiveTab, label: "Painel de Indicadores", icon: Activity },
+    { id: "timeline" as ActiveTab, label: "Linha do Tempo Médica", icon: Calendar },
+    { id: "medications" as ActiveTab, label: "Medicamentos & Lembretes", icon: Pill, badge: medicationsCount },
+    { id: "habits" as ActiveTab, label: "Rotina & Bem-estar", icon: Droplet },
+    { id: "chat" as ActiveTab, label: "Assistente IA Vita4Me", icon: MessageSquare, isNew: true },
+    { id: "settings" as ActiveTab, label: "Configurações & Conta", icon: Settings },
   ];
 
   return (
-    <aside id="healthai-sidebar" className="w-full lg:w-64 bg-slate-900 border-r border-slate-800 p-4 flex flex-col justify-between shrink-0">
-      <div className="space-y-1">
-        <div className="px-3 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-          Ecossistema de Saúde
-        </div>
+    <>
+      {/* Backdrop mobile */}
+      {isOpenMobile && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-xs lg:hidden"
+          onClick={onCloseMobile}
+        />
+      )}
 
-        <nav className="space-y-1">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
+      <aside
+        className={`fixed top-0 bottom-0 left-0 z-40 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-transform duration-200 lg:static lg:translate-x-0 ${
+          isOpenMobile ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {/* Brand Header */}
+        <div>
+          <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <img
+                src="/logo-icon-transparent.png"
+                alt="Vita4Me Logo"
+                className="h-8 w-auto object-contain flex-shrink-0"
+              />
+              <div className="flex flex-col">
+                <span className="text-base font-black tracking-tight text-slate-900 dark:text-white flex items-center leading-none">
+                  vita<span className="text-emerald-500 font-extrabold">4</span>me
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-tight mt-0.5">
+                  Prontuário Digital & IA
+                </span>
+              </div>
+            </div>
 
-            return (
-              <button
-                key={item.id}
-                id={`sidebar-nav-${item.id}`}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                  isActive
-                    ? 'bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30 shadow-sm'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon className={`w-4 h-4 ${
-                    isActive ? 'text-emerald-400' : item.isAi ? 'text-teal-400' : 'text-slate-400'
-                  }`} />
-                  <span className="truncate">{item.label}</span>
-                </div>
+            <button
+              onClick={onCloseMobile}
+              className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
 
-                <div className="flex items-center gap-1.5">
+          {/* Navigation Links */}
+          <nav className="p-3 space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onNavigate(item.id);
+                    onCloseMobile();
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                    isActive
+                      ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 shadow-xs font-bold"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 ${isActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}`} />
+                    <span>{item.label}</span>
+                  </div>
+
                   {item.badge !== undefined && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                    <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-mono text-slate-600 dark:text-slate-300 font-bold">
                       {item.badge}
                     </span>
                   )}
-                  {item.badgeWarning && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                      {item.badgeWarning}
-                    </span>
-                  )}
-                  {item.isAi && (
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-gradient-to-r from-teal-500/30 to-emerald-500/30 text-teal-300 border border-teal-500/30">
+
+                  {item.isNew && (
+                    <span className="px-1.5 py-0.2 rounded-md bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
                       IA
                     </span>
                   )}
-                </div>
-              </button>
-            );
-          })}
-        </nav>
-      </div>
-
-      {/* Footer Banner in Sidebar */}
-      <div className="mt-8 pt-4 border-t border-slate-800/80">
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-left">
-          <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold mb-1">
-            <ShieldCheck className="w-4 h-4" />
-            <span>Dados Privados & Seguros</span>
-          </div>
-          <p className="text-[11px] text-slate-400 leading-snug">
-            Criptografia de ponta a ponta. A HealthAI não realiza diagnósticos e não substitui seu médico.
-          </p>
+                </button>
+              );
+            })}
+          </nav>
         </div>
-      </div>
-    </aside>
+
+        {/* Upgrade Banner in Bottom Sidebar */}
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+          <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-slate-950 border border-emerald-100 dark:border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                <Crown className="w-3.5 h-3.5 text-amber-500" />
+                Vita4Me Family
+              </span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 font-bold">
+                20% OFF
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed">
+              Centralize exames e medicamentos de toda a sua família com Assistente de IA incluído.
+            </p>
+            <button
+              onClick={onOpenBillingModal}
+              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+            >
+              Ver Planos
+            </button>
+          </div>
+
+          <div className="flex items-center justify-center gap-2 text-[10px] text-slate-500">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500" />
+            <span>Privacidade & Dados Criptografados</span>
+          </div>
+        </div>
+      </aside>
+    </>
   );
 };

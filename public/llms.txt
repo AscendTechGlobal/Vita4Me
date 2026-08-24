@@ -1,0 +1,19 @@
+# Vita4Me — Prontuário Médico Digital & IA de Saúde
+> Plataforma inteligente para organização e tradução em linguagem simples de exames laboratoriais, receitas e histórico clínico.
+
+## Visão Geral
+- **Nome:** Vita4Me
+- **Site Oficial:** https://vita4me.app
+- **Objetivo:** Organizar, traduzir e preservar o histórico de saúde pessoal e familiar para a vida toda.
+- **Tecnologias:** Inteligência Artificial (OCR e LLM), PostgreSQL com Row Level Security (RLS), Criptografia AES-256.
+
+## Funcionalidades Principais
+- **Central de Exames:** Leitura de laudos laboratoriais em PDF/imagem e extração de biomarcadores.
+- **Tradutor de Exames com IA:** Tradução de laudos técnicos para linguagem simples e acessível, com destaques e perguntas sugeridas para levar ao médico.
+- **Dossiê Clínico em PDF:** Exportação consolidada e profissional com 1 clique para apresentar em consultas médicas.
+- **Perfis Familiares:** Gestão centralizada da saúde de filhos, cônjuges e pais.
+- **Assistente IA 24/7:** Esclarecimento de dúvidas sobre histórico médico pessoal com contexto criptografado.
+
+## Limites Éticos e Conformidade
+- O Vita4Me não realiza diagnósticos médicos e não substitui a consulta com profissionais de saúde.
+- Em total conformidade com a LGPD (Lei Geral de Proteção de Dados) e sigilo médico.

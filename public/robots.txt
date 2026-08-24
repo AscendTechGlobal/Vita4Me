@@ -1,0 +1,30 @@
+# ==============================================================================
+# VITA4ME — ROBOTS.TXT (CRAWLING & INDEXATION POLICY)
+# ==============================================================================
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /app/
+Disallow: /settings/
+Disallow: /checkout/
+
+# AI Search Engines & Conversational Answer Engines (GEO Optimization)
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+# XML Sitemap
+Sitemap: https://vita4me.app/sitemap.xml

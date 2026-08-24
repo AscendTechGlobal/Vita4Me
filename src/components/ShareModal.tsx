@@ -65,7 +65,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     customDoctorNote: ''
   });
 
-  const shareUrl = `https://healthai.app/share/patient-${userProfile.cpf.replace(/[^0-9]/g, '')}`;
+  const shareUrl = `https://vita4me.app/share/patient-${userProfile.cpf.replace(/[^0-9]/g, '')}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl);
@@ -92,7 +92,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       setTimeout(() => {
         const doc = createPDFInstance();
         const cleanName = userProfile.name.replace(/\s+/g, '_');
-        const fileName = `HealthAI_Resumo_${cleanName}_${new Date().toISOString().split('T')[0]}.pdf`;
+        const fileName = `Vita4Me_Resumo_${cleanName}_${new Date().toISOString().split('T')[0]}.pdf`;
         doc.save(fileName);
         
         setIsGeneratingPdf(false);
