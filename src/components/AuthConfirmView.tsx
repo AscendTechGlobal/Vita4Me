@@ -23,25 +23,31 @@ export const AuthConfirmView: React.FC<AuthConfirmViewProps> = ({ onGoToLogin })
   useEffect(() => {
     let isMounted = true;
 
+    const cleanUrl = () => {
+      try {
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      } catch (e) {
+        console.warn("Não foi possível limpar a URL:", e);
+      }
+    };
+
     const processConfirmation = async () => {
       try {
-        const hash = window.location.hash;
-        const search = window.location.search;
+        const hash = window.location.hash || "";
+        const search = window.location.search || "";
 
         const hashParams = new URLSearchParams(hash.startsWith("#") ? hash.substring(1) : hash);
         const searchParams = new URLSearchParams(search);
 
-        // 1. Verificar se o Supabase retornou erro na URL
+        // 1. Verificar se o Supabase retornou erro explícito na URL
         const error = hashParams.get("error") || searchParams.get("error");
         const errorCode = hashParams.get("error_code") || searchParams.get("error_code");
         const errorDescription = hashParams.get("error_description") || searchParams.get("error_description") || "";
 
-        // Remover imediatamente quaisquer tokens ou erros sensíveis da barra de endereço da URL
-        if (window.history && window.history.replaceState) {
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-
         if (error || errorCode) {
+          cleanUrl();
           if (
             errorCode === "otp_expired" ||
             errorDescription.toLowerCase().includes("expired") ||
@@ -65,11 +71,13 @@ export const AuthConfirmView: React.FC<AuthConfirmViewProps> = ({ onGoToLogin })
           return;
         }
 
-        // 2. Se o fluxo for PKCE (com ?code=...)
-        const code = searchParams.get("code");
+        // 2. Fluxo PKCE (com ?code=...) -> processar antes de limpar a URL
+        const code = searchParams.get("code") || hashParams.get("code");
         if (code && isSupabaseConfigured) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          cleanUrl();
           if (exchangeError) {
+            console.error("Erro no exchangeCodeForSession:", exchangeError.message);
             if (
               exchangeError.message?.toLowerCase().includes("expired") ||
               exchangeError.message?.toLowerCase().includes("expirou")
@@ -84,38 +92,85 @@ export const AuthConfirmView: React.FC<AuthConfirmViewProps> = ({ onGoToLogin })
           return;
         }
 
-        // 3. Se o fluxo for Hash Token (com #access_token=...), o Supabase client inicializa a sessão automaticamente
+        // 3. Fluxo Token Hash (?token_hash=...&type=signup|email) -> processar antes de limpar a URL
+        const tokenHash = searchParams.get("token_hash") || hashParams.get("token_hash");
+        const otpType = (searchParams.get("type") || hashParams.get("type") || "email") as any;
+        if (tokenHash && isSupabaseConfigured) {
+          const { error: otpError } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: otpType === "signup" ? "signup" : "email",
+          });
+          cleanUrl();
+          if (otpError) {
+            console.error("Erro no verifyOtp:", otpError.message);
+            if (
+              otpError.message?.toLowerCase().includes("expired") ||
+              otpError.message?.toLowerCase().includes("expirou")
+            ) {
+              if (isMounted) setStatus("error_expired");
+            } else {
+              if (isMounted) setStatus("error_invalid");
+            }
+            return;
+          }
+          if (isMounted) setStatus("success");
+          return;
+        }
+
+        // 4. Fluxo Implicit / Hash (#access_token=...&refresh_token=...) -> processar antes de limpar a URL
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
+        if (accessToken && refreshToken && isSupabaseConfigured) {
+          const { error: setSessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          cleanUrl();
+          if (setSessionError) {
+            console.error("Erro no setSession:", setSessionError.message);
+            if (isMounted) setStatus("error_invalid");
+            return;
+          }
+          if (isMounted) setStatus("success");
+          return;
+        }
+
+        // 5. Verificar se uma sessão válida já foi restaurada pelo SDK
         if (isSupabaseConfigured) {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
+            cleanUrl();
             if (isMounted) setStatus("success");
             return;
           }
         }
 
-        // 4. Se não identificou erro e tem indicação de confirmação
-        const type = hashParams.get("type");
-        if (type === "signup" || type === "email_confirmation" || type === "invite" || hashParams.has("access_token")) {
+        // 6. Indicação de confirmação por parâmetro type
+        const type = hashParams.get("type") || searchParams.get("type");
+        if (type === "signup" || type === "email_confirmation" || type === "invite") {
+          cleanUrl();
           if (isMounted) setStatus("success");
           return;
         }
 
-        // Fallback após pequeno timeout de inicialização do cliente Supabase
+        // 7. Fallback com timeout seguro
         const timeout = setTimeout(async () => {
           if (!isMounted) return;
           if (isSupabaseConfigured) {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
+              cleanUrl();
               setStatus("success");
               return;
             }
           }
-          // Caso padrão ao acessar a URL de confirmação
+          cleanUrl();
           setStatus("success");
-        }, 1200);
+        }, 1000);
 
         return () => clearTimeout(timeout);
       } catch (err: any) {
+        cleanUrl();
         console.error("Erro no processamento da confirmação de e-mail:", err?.message || err);
         if (isMounted) setStatus("error_generic");
       }
