@@ -139,55 +139,37 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
 
   const handleFinalSubmit = async () => {
     setErrorMessage(null);
+
+    // Validação estrita da ETAPA 1 (Obrigatória)
+    if (!name.trim()) {
+      setStep(1);
+      setErrorMessage("Por favor, preencha o seu nome completo.");
+      return;
+    }
+    if (!birthDate) {
+      setStep(1);
+      setErrorMessage("Por favor, informe a sua data de nascimento.");
+      return;
+    }
+    if (!height || Number(height) <= 0) {
+      setStep(1);
+      setErrorMessage("Por favor, informe uma altura válida.");
+      return;
+    }
+    if (!weight || Number(weight) <= 0) {
+      setStep(1);
+      setErrorMessage("Por favor, informe um peso válido.");
+      return;
+    }
+
     setIsSaving(true);
     try {
       const allergiesArray = allergiesText
         ? allergiesText.split(",").map(a => a.trim()).filter(Boolean)
         : [];
 
-      // Automatically seed weight into Indicators
-      if (weight > 0) {
-        saveIndicator({
-          id: "ind-weight-" + Date.now(),
-          user_id: "usr-default",
-          name: "Peso",
-          category: "Vital",
-          value: Number(weight),
-          unit: "kg",
-          measured_at: new Date().toISOString(),
-          status: "normal",
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      // Automatically seed medications
-      medsList.forEach(m => {
-        saveMedication({
-          id: "med-" + Math.random().toString(36).substring(2, 9),
-          user_id: "usr-default",
-          name: m.name,
-          dosage: m.dosage,
-          frequency: m.frequency,
-          schedule_times: [m.schedule],
-          is_continuous: true,
-          is_active: true,
-          created_at: new Date().toISOString(),
-        });
-      });
-
-      // Automatically seed allergies to health records
-      allergiesArray.forEach(al => {
-        saveHealthRecord({
-          id: "rec-al-" + Math.random().toString(36).substring(2, 9),
-          user_id: "usr-default",
-          record_type: "alergia",
-          title: `Alergia: ${al}`,
-          description: "Declarada na anamnese médica inicial.",
-          event_date: new Date().toISOString().split("T")[0],
-          tags: ["Alergia", "Anamnese"],
-          created_at: new Date().toISOString(),
-        });
-      });
+      // Apenas medicamentos com nome preenchido
+      const validMeds = medsList.filter(m => m.name && m.name.trim());
 
       const result = await onSaveCompleted({
         name: name.trim() || "Paciente",
@@ -199,9 +181,9 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
         smoking,
         alcohol,
         activity,
-        chronicConditions: selectedConditions,
+        chronicConditions: selectedConditions.filter(c => c !== "Nenhuma condição crônica"),
         allergies: allergiesArray,
-        medications: medsList,
+        medications: validMeds,
         emergencyName: emergencyName.trim(),
         emergencyPhone: emergencyPhone.trim(),
       });
@@ -221,7 +203,7 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
       trackEvent('onboarding_completed', { targetType });
       onClose();
     } catch (err: any) {
-      console.error("Erro no salvamento da anamnese:", err?.message || err);
+      console.error("Erro técnico no salvamento da anamnese:", err?.message || err);
       setErrorMessage("Não foi possível salvar sua anamnese. Tente novamente.");
     } finally {
       setIsSaving(false);

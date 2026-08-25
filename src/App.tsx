@@ -356,7 +356,7 @@ const MainAppContent: React.FC = () => {
                 alcohol_status: data.alcohol?.trim() || null,
                 activity_level: data.activity?.trim() || null,
                 chronic_conditions: Array.isArray(data.chronicConditions)
-                  ? data.chronicConditions.map((c: string) => c.trim()).filter(Boolean)
+                  ? data.chronicConditions.map((c: string) => c.trim()).filter((c: string) => c && c !== "Nenhuma condição crônica")
                   : [],
                 allergies: Array.isArray(data.allergies)
                   ? data.allergies.map((a: string) => a.trim()).filter(Boolean)
@@ -368,28 +368,54 @@ const MainAppContent: React.FC = () => {
               };
 
               if (isSupabaseConfigured) {
-                // 2. Persistir Perfil no Supabase
-                const { data: updatedProfile, error: profileError } = await supabase
+                // 2. Persistir Perfil no Supabase (com select array resiliente)
+                const { data: updatedRows, error: profileError } = await supabase
                   .from('profiles')
                   .update(profilePayload)
                   .eq('id', user.id)
-                  .select()
-                  .single();
+                  .select();
 
                 if (profileError) {
-                  console.error("Erro técnico ao atualizar public.profiles:", profileError.message);
+                  console.error("Supabase Error [profiles.update]:", {
+                    code: profileError.code,
+                    message: profileError.message,
+                    details: profileError.details,
+                    hint: profileError.hint,
+                  });
                   return {
                     success: false,
                     error: "Não foi possível salvar sua anamnese no servidor. Tente novamente.",
                   };
                 }
 
-                if (!updatedProfile || updatedProfile.onboarding_completed !== true) {
-                  console.error("Supabase não confirmou onboarding_completed = true:", updatedProfile);
-                  return {
-                    success: false,
-                    error: "Não foi possível confirmar o salvamento da anamnese. Tente novamente.",
+                if (!updatedRows || updatedRows.length === 0 || updatedRows[0]?.onboarding_completed !== true) {
+                  // Fallback se a linha ainda não existia em profiles
+                  const fallbackInsertPayload = {
+                    id: user.id,
+                    email: user.email || '',
+                    ...profilePayload,
+                    plan_tier: 'individual',
+                    subscription_status: 'inactive',
+                    ai_credits: 0,
                   };
+                  const { data: insertedRow, error: insertError } = await supabase
+                    .from('profiles')
+                    .insert(fallbackInsertPayload)
+                    .select()
+                    .single();
+
+                  if (insertError || !insertedRow || insertedRow.onboarding_completed !== true) {
+                    console.error("Supabase Error [profiles.insert fallback]:", {
+                      code: insertError?.code,
+                      message: insertError?.message,
+                      details: insertError?.details,
+                      hint: insertError?.hint,
+                    });
+                    return {
+                      success: false,
+                      error: "Não foi possível confirmar a gravação do perfil no banco de dados. Tente novamente.",
+                    };
+                  }
                 }
 
                 // 3. Persistir Indicador de Peso inicial no Supabase (se fornecido)
@@ -406,14 +432,19 @@ const MainAppContent: React.FC = () => {
                       status: 'normal',
                     });
                   if (indError) {
-                    console.warn("Aviso ao salvar indicador de peso:", indError.message);
+                    console.error("Supabase Error [health_indicators.insert]:", {
+                      code: indError.code,
+                      message: indError.message,
+                      details: indError.details,
+                      hint: indError.hint,
+                    });
                   }
                 }
 
                 // 4. Persistir Medicamentos contínuos no Supabase (se fornecidos)
                 if (Array.isArray(data.medications) && data.medications.length > 0) {
                   for (const med of data.medications) {
-                    if (med.name?.trim()) {
+                    if (med && med.name && med.name.trim()) {
                       const { error: medError } = await supabase
                         .from('medications')
                         .insert({
@@ -427,7 +458,12 @@ const MainAppContent: React.FC = () => {
                           updated_at: new Date().toISOString(),
                         });
                       if (medError) {
-                        console.warn("Aviso ao salvar medicamento:", medError.message);
+                        console.error("Supabase Error [medications.insert]:", {
+                          code: medError.code,
+                          message: medError.message,
+                          details: medError.details,
+                          hint: medError.hint,
+                        });
                       }
                     }
                   }
@@ -436,7 +472,7 @@ const MainAppContent: React.FC = () => {
                 // 5. Persistir Alergias no histórico clínico do Supabase (se fornecidas)
                 if (Array.isArray(data.allergies) && data.allergies.length > 0) {
                   for (const al of data.allergies) {
-                    if (al.trim()) {
+                    if (al && al.trim()) {
                       const { error: recError } = await supabase
                         .from('health_records')
                         .insert({
@@ -449,7 +485,12 @@ const MainAppContent: React.FC = () => {
                           updated_at: new Date().toISOString(),
                         });
                       if (recError) {
-                        console.warn("Aviso ao salvar registro clínico de alergia:", recError.message);
+                        console.error("Supabase Error [health_records.insert]:", {
+                          code: recError.code,
+                          message: recError.message,
+                          details: recError.details,
+                          hint: recError.hint,
+                        });
                       }
                     }
                   }
