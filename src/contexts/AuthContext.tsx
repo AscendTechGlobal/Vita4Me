@@ -120,11 +120,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isSupabaseConfigured) {
       return { error: "Serviço de autenticação não configurado no ambiente." };
     }
+    const confirmUrl = `${window.location.origin}/auth/confirm`;
     const { error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
         data: { full_name: fullName?.trim() || '' },
+        emailRedirectTo: confirmUrl,
       },
     });
     if (error) {

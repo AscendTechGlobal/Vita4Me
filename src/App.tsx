@@ -14,6 +14,7 @@ const MedicationsView = lazy(() => import("./components/MedicationsView").then(m
 const HabitsView = lazy(() => import("./components/HabitsView").then(m => ({ default: m.HabitsView })));
 const HealthAIChatView = lazy(() => import("./components/HealthAIChatView").then(m => ({ default: m.HealthAIChatView })));
 const SettingsView = lazy(() => import("./components/SettingsView").then(m => ({ default: m.SettingsView })));
+const AuthConfirmView = lazy(() => import("./components/AuthConfirmView").then(m => ({ default: m.AuthConfirmView })));
 
 // Lazy-loaded Modals
 const BillingModal = lazy(() => import("./components/BillingModal").then(m => ({ default: m.BillingModal })));
@@ -48,6 +49,14 @@ const MainAppContent: React.FC = () => {
   const [viewMode, setViewMode] = useState<"landing" | "app">("landing");
   const [currentTab, setCurrentTab] = useState<ActiveTab>("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isConfirmRoute, setIsConfirmRoute] = useState<boolean>(() => {
+    return (
+      window.location.pathname === "/auth/confirm" ||
+      window.location.pathname.startsWith("/auth/confirm") ||
+      window.location.hash.includes("type=signup") ||
+      window.location.hash.includes("type=email_confirmation")
+    );
+  });
 
   // Modals state
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
@@ -127,7 +136,24 @@ const MainAppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-[#7AC943] selection:text-[#0A3B2E]">
-      {viewMode === "landing" || !user ? (
+      {isConfirmRoute ? (
+        <Suspense fallback={<LoadingSpinner />}>
+          <AuthConfirmView
+            onGoToLogin={() => {
+              if (window.history && window.history.replaceState) {
+                window.history.replaceState({}, document.title, "/");
+              }
+              setIsConfirmRoute(false);
+              if (user) {
+                setViewMode("app");
+              } else {
+                setViewMode("landing");
+                setIsAuthModalOpen(true);
+              }
+            }}
+          />
+        </Suspense>
+      ) : viewMode === "landing" || !user ? (
         <LandingPageView
           onEnterApp={() => {
             if (user) {
