@@ -6,7 +6,6 @@ import Stripe from "stripe";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -19,7 +18,13 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-const IS_PROD = process.env.NODE_ENV === "production";
+const isCompiled = (typeof __filename !== "undefined" && __filename.includes("dist")) || (process.argv[1] ? process.argv[1].includes("dist") : false);
+const IS_PROD =
+  process.env.NODE_ENV === "production" ||
+  Boolean(process.env.RAILWAY_ENVIRONMENT) ||
+  Boolean(process.env.RAILWAY_PROJECT_ID) ||
+  isCompiled ||
+  process.env.NODE_ENV !== "development";
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 
 // ==============================================================================
@@ -111,6 +116,9 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:3000",
   "http://127.0.0.1:5173",
+  "https://vita4me-production.up.railway.app",
+  "https://vita4me.app",
+  "https://www.vita4me.app",
   APP_URL,
 ].filter(Boolean);
 
@@ -1097,6 +1105,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // ==============================================================================
 async function startServer() {
   if (!IS_PROD) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -1119,7 +1128,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🌿 Vita4Me Hardened Server rodando com sucesso em http://localhost:${PORT}`);
+    console.log(`🌿 Vita4Me Hardened Server rodando com sucesso em http://0.0.0.0:${PORT} [Modo: ${IS_PROD ? "PRODUÇÃO" : "DESENVOLVIMENTO"}]`);
   });
 }
 
