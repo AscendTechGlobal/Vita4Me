@@ -15,7 +15,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<{ error: string | null }>;
   updateUserPassword: (password: string) => Promise<{ error: string | null }>;
-  refreshProfile: () => Promise<void>;
+  refreshProfile: () => Promise<UserProfile | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,17 +26,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
-  const fetchProfile = async (userId: string, userEmail?: string, fullNameMeta?: string) => {
-    if (!isSupabaseConfigured) return;
+  const fetchProfile = async (userId: string, userEmail?: string, fullNameMeta?: string): Promise<UserProfile | null> => {
+    if (!isSupabaseConfigured) return null;
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code === 'PGRST116') {
-        // Se o profile ainda não foi criado pela trigger, tentar inicializar com segurança
+      if (error) {
+        console.error('Erro ao carregar perfil do Supabase:', error);
+        return null;
+      }
+
+      if (!data) {
+        // Inicialização de segurança caso a trigger de auth ainda não tenha executado
         const newProfile: Partial<UserProfile> = {
           id: userId,
           email: userEmail || '',
@@ -46,24 +51,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ai_credits: 0,
           onboarding_completed: false,
         };
-        const { data: created } = await supabase
+        const { data: created, error: createError } = await supabase
           .from('profiles')
           .insert(newProfile)
           .select()
           .single();
-        if (created) setProfile(created as UserProfile);
-      } else if (data) {
+
+        if (createError) {
+          console.error('Erro ao criar fallback de perfil:', createError);
+          return null;
+        }
+        if (created) {
+          setProfile(created as UserProfile);
+          return created as UserProfile;
+        }
+      } else {
         setProfile(data as UserProfile);
+        return data as UserProfile;
       }
     } catch (err) {
-      console.error('Erro ao carregar perfil:', err);
+      console.error('Exceção ao buscar perfil:', err);
+      return null;
     }
+    return null;
   };
 
-  const refreshProfile = async () => {
+  const refreshProfile = async (): Promise<UserProfile | null> => {
     if (user) {
-      await fetchProfile(user.id, user.email, user.user_metadata?.full_name);
+      return await fetchProfile(user.id, user.email, user.user_metadata?.full_name);
     }
+    return null;
   };
 
   useEffect(() => {
@@ -77,24 +94,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // Obter sessão atual
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user);
-        fetchProfile(session.user.id, session.user.email, session.user.user_metadata?.full_name);
+    // Obter sessão atual e aguardar hidratação de sessão E perfil antes de finalizar loading
+    const initializeAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          setUser(session.user);
+          await fetchProfile(session.user.id, session.user.email, session.user.user_metadata?.full_name);
+        } else {
+          setUser(null);
+          setProfile(null);
+        }
+      } catch (err) {
+        console.error('Erro na inicialização de autenticação:', err);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
-    });
+    };
+
+    initializeAuth();
 
     // Escutar mudanças de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);
       }
 
       if (session?.user) {
         setUser(session.user);
-        fetchProfile(session.user.id, session.user.email, session.user.user_metadata?.full_name);
+        await fetchProfile(session.user.id, session.user.email, session.user.user_metadata?.full_name);
       } else {
         setUser(null);
         setProfile(null);

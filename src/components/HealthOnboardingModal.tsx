@@ -12,9 +12,10 @@ import {
   Phone, 
   Flame, 
   Wine, 
-  Cigarette
+  Cigarette,
+  Loader2
 } from "lucide-react";
-import { FamilyMember } from "../types";
+import { FamilyMember, UserProfile } from "../types";
 import { saveIndicator, saveMedication, saveHealthRecord } from "../lib/healthStorage";
 import { trackEvent } from "../lib/analytics";
 
@@ -23,6 +24,7 @@ interface HealthOnboardingModalProps {
   onClose: () => void;
   targetType: 'user' | 'family';
   initialName?: string;
+  initialProfile?: UserProfile | null;
   relationship?: FamilyMember['relationship'];
   onSaveCompleted: (data: {
     name: string;
@@ -39,7 +41,7 @@ interface HealthOnboardingModalProps {
     medications: Array<{ name: string; dosage: string; frequency: string; schedule: string }>;
     emergencyName: string;
     emergencyPhone: string;
-  }) => void;
+  }) => Promise<boolean | void> | void;
 }
 
 export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
@@ -47,9 +49,11 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
   onClose,
   targetType,
   initialName = "",
+  initialProfile = null,
   onSaveCompleted,
 }) => {
   const [step, setStep] = useState<number>(1);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -57,30 +61,30 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
     }
   }, [isOpen, targetType]);
 
-  // Step 1: Biometrics
-  const [name, setName] = useState(initialName);
-  const [birthDate, setBirthDate] = useState("1990-01-01");
-  const [gender, setGender] = useState("Masculino");
-  const [bloodType, setBloodType] = useState("O+");
-  const [height, setHeight] = useState<number>(175);
-  const [weight, setWeight] = useState<number>(75);
+  // Step 1: Biometrics (inicializa com dados existentes do perfil se disponíveis)
+  const [name, setName] = useState(initialProfile?.full_name || initialName);
+  const [birthDate, setBirthDate] = useState(initialProfile?.date_of_birth || "1990-01-01");
+  const [gender, setGender] = useState(initialProfile?.gender || "Masculino");
+  const [bloodType, setBloodType] = useState(initialProfile?.blood_type || "O+");
+  const [height, setHeight] = useState<number>(initialProfile?.height_cm || 175);
+  const [weight, setWeight] = useState<number>(initialProfile?.weight_kg || 75);
 
   // Step 2: Lifestyle
-  const [smoking, setSmoking] = useState("Não fumante");
-  const [alcohol, setAlcohol] = useState("Socialmente");
-  const [activity, setActivity] = useState("Moderado (3-4x/sem)");
+  const [smoking, setSmoking] = useState(initialProfile?.smoking_status || "Não fumante");
+  const [alcohol, setAlcohol] = useState(initialProfile?.alcohol_status || "Socialmente");
+  const [activity, setActivity] = useState(initialProfile?.activity_level || "Moderado (3-4x/sem)");
 
   // Step 3: Conditions & Allergies
-  const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
-  const [allergiesText, setAllergiesText] = useState("");
+  const [selectedConditions, setSelectedConditions] = useState<string[]>(initialProfile?.chronic_conditions || []);
+  const [allergiesText, setAllergiesText] = useState(initialProfile?.allergies?.join(", ") || "");
 
   // Step 4: Continuous Medications & Emergency
   const [medsList, setMedsList] = useState<Array<{ name: string; dosage: string; frequency: string; schedule: string }>>([]);
   const [currentMedName, setCurrentMedName] = useState("");
   const [currentMedDosage, setCurrentMedDosage] = useState("");
   const [currentMedSchedule, setCurrentMedSchedule] = useState("08:00");
-  const [emergencyName, setEmergencyName] = useState("");
-  const [emergencyPhone, setEmergencyPhone] = useState("");
+  const [emergencyName, setEmergencyName] = useState(initialProfile?.emergency_contact_name || "");
+  const [emergencyPhone, setEmergencyPhone] = useState(initialProfile?.emergency_contact_phone || "");
 
   if (!isOpen) return null;
 
@@ -131,74 +135,83 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
     setMedsList(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleFinalSubmit = () => {
-    const allergiesArray = allergiesText
-      ? allergiesText.split(",").map(a => a.trim()).filter(Boolean)
-      : [];
+  const handleFinalSubmit = async () => {
+    setIsSaving(true);
+    try {
+      const allergiesArray = allergiesText
+        ? allergiesText.split(",").map(a => a.trim()).filter(Boolean)
+        : [];
 
-    // Automatically seed weight into Indicators
-    if (weight > 0) {
-      saveIndicator({
-        id: "ind-weight-" + Date.now(),
-        user_id: "usr-default",
-        name: "Peso",
-        category: "Vital",
-        value: Number(weight),
-        unit: "kg",
-        measured_at: new Date().toISOString(),
-        status: "normal",
-        created_at: new Date().toISOString(),
+      // Automatically seed weight into Indicators
+      if (weight > 0) {
+        saveIndicator({
+          id: "ind-weight-" + Date.now(),
+          user_id: "usr-default",
+          name: "Peso",
+          category: "Vital",
+          value: Number(weight),
+          unit: "kg",
+          measured_at: new Date().toISOString(),
+          status: "normal",
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      // Automatically seed medications
+      medsList.forEach(m => {
+        saveMedication({
+          id: "med-" + Math.random().toString(36).substring(2, 9),
+          user_id: "usr-default",
+          name: m.name,
+          dosage: m.dosage,
+          frequency: m.frequency,
+          schedule_times: [m.schedule],
+          is_continuous: true,
+          is_active: true,
+          created_at: new Date().toISOString(),
+        });
       });
+
+      // Automatically seed allergies to health records
+      allergiesArray.forEach(al => {
+        saveHealthRecord({
+          id: "rec-al-" + Math.random().toString(36).substring(2, 9),
+          user_id: "usr-default",
+          record_type: "alergia",
+          title: `Alergia: ${al}`,
+          description: "Declarada na anamnese médica inicial.",
+          event_date: new Date().toISOString().split("T")[0],
+          tags: ["Alergia", "Anamnese"],
+          created_at: new Date().toISOString(),
+        });
+      });
+
+      const success = await onSaveCompleted({
+        name: name.trim() || "Paciente",
+        birthDate,
+        gender,
+        bloodType,
+        height: Number(height) || 0,
+        weight: Number(weight) || 0,
+        smoking,
+        alcohol,
+        activity,
+        chronicConditions: selectedConditions,
+        allergies: allergiesArray,
+        medications: medsList,
+        emergencyName: emergencyName.trim(),
+        emergencyPhone: emergencyPhone.trim(),
+      });
+
+      trackEvent('onboarding_completed', { targetType });
+      if (success !== false) {
+        onClose();
+      }
+    } catch (err) {
+      console.error("Erro no salvamento da anamnese:", err);
+    } finally {
+      setIsSaving(false);
     }
-
-    // Automatically seed medications
-    medsList.forEach(m => {
-      saveMedication({
-        id: "med-" + Math.random().toString(36).substring(2, 9),
-        user_id: "usr-default",
-        name: m.name,
-        dosage: m.dosage,
-        frequency: m.frequency,
-        schedule_times: [m.schedule],
-        is_continuous: true,
-        is_active: true,
-        created_at: new Date().toISOString(),
-      });
-    });
-
-    // Automatically seed allergies to health records
-    allergiesArray.forEach(al => {
-      saveHealthRecord({
-        id: "rec-al-" + Math.random().toString(36).substring(2, 9),
-        user_id: "usr-default",
-        record_type: "alergia",
-        title: `Alergia: ${al}`,
-        description: "Declarada na anamnese médica inicial.",
-        event_date: new Date().toISOString().split("T")[0],
-        tags: ["Alergia", "Anamnese"],
-        created_at: new Date().toISOString(),
-      });
-    });
-
-    onSaveCompleted({
-      name: name.trim() || "Paciente",
-      birthDate,
-      gender,
-      bloodType,
-      height,
-      weight,
-      smoking,
-      alcohol,
-      activity,
-      chronicConditions: selectedConditions,
-      allergies: allergiesArray,
-      medications: medsList,
-      emergencyName: emergencyName.trim(),
-      emergencyPhone: emergencyPhone.trim(),
-    });
-
-    trackEvent('onboarding_completed', { targetType });
-    onClose();
   };
 
   return (
@@ -627,11 +640,21 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
           ) : (
             <button
               type="button"
+              disabled={isSaving}
               onClick={handleFinalSubmit}
-              className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-xs transition cursor-pointer"
+              className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-xs transition cursor-pointer"
             >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Concluir & Alimentar Prontuário</span>
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Salvando no Prontuário...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Concluir & Alimentar Prontuário</span>
+                </>
+              )}
             </button>
           )}
         </div>
