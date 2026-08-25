@@ -5,7 +5,7 @@ import crypto from "crypto";
 import Stripe from "stripe";
 import cors from "cors";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -429,8 +429,10 @@ const aiLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutos
   max: 40, // Até 40 consultas a cada 10 minutos por usuário/IP
   keyGenerator: (req: Request) => {
-    // Agrupa por usuário autenticado se disponível, caso contrário por IP
-    return (req as any).user?.id || req.ip || "unknown";
+    const userId = (req as any).user?.id;
+    if (userId) return `user:${userId}`;
+
+    return ipKeyGenerator(req.ip || "127.0.0.1");
   },
   message: {
     error: "Limite temporário da Política de Uso Justo (Fair Use) atingido. Aguarde alguns minutos antes de realizar novas consultas de IA.",
