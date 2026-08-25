@@ -368,7 +368,7 @@ const MainAppContent: React.FC = () => {
               };
 
               if (isSupabaseConfigured) {
-                // 2. Persistir Perfil no Supabase (com select array resiliente)
+                // 2. Persistir Perfil no Supabase (Atualização do registro garantido pelo trigger de signup)
                 const { data: updatedRows, error: profileError } = await supabase
                   .from('profiles')
                   .update(profilePayload)
@@ -389,33 +389,11 @@ const MainAppContent: React.FC = () => {
                 }
 
                 if (!updatedRows || updatedRows.length === 0 || updatedRows[0]?.onboarding_completed !== true) {
-                  // Fallback se a linha ainda não existia em profiles
-                  const fallbackInsertPayload = {
-                    id: user.id,
-                    email: user.email || '',
-                    ...profilePayload,
-                    plan_tier: 'individual',
-                    subscription_status: 'inactive',
-                    ai_credits: 0,
+                  console.error("Supabase Error [profiles.update]: Registro em public.profiles não encontrado ou não atualizado para o usuário autenticado.");
+                  return {
+                    success: false,
+                    error: "Registro de perfil não encontrado no servidor. Tente fazer login novamente.",
                   };
-                  const { data: insertedRow, error: insertError } = await supabase
-                    .from('profiles')
-                    .insert(fallbackInsertPayload)
-                    .select()
-                    .single();
-
-                  if (insertError || !insertedRow || insertedRow.onboarding_completed !== true) {
-                    console.error("Supabase Error [profiles.insert fallback]:", {
-                      code: insertError?.code,
-                      message: insertError?.message,
-                      details: insertError?.details,
-                      hint: insertError?.hint,
-                    });
-                    return {
-                      success: false,
-                      error: "Não foi possível confirmar a gravação do perfil no banco de dados. Tente novamente.",
-                    };
-                  }
                 }
 
                 // 3. Persistir Indicador de Peso inicial no Supabase (se fornecido)

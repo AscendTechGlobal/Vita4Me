@@ -26,7 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
-  const fetchProfile = async (userId: string, userEmail?: string, fullNameMeta?: string): Promise<UserProfile | null> => {
+  const fetchProfile = async (userId: string): Promise<UserProfile | null> => {
     if (!isSupabaseConfigured) return null;
     try {
       const { data, error } = await supabase
@@ -36,49 +36,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .maybeSingle();
 
       if (error) {
-        console.error('Erro ao carregar perfil do Supabase:', error);
+        console.error('Erro ao carregar perfil do Supabase:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
         return null;
       }
 
-      if (!data) {
-        // Inicialização de segurança caso a trigger de auth ainda não tenha executado
-        const newProfile: Partial<UserProfile> = {
-          id: userId,
-          email: userEmail || '',
-          full_name: fullNameMeta || userEmail?.split('@')[0] || 'Usuário Vita4Me',
-          plan_tier: 'individual',
-          subscription_status: 'inactive',
-          ai_credits: 0,
-          onboarding_completed: false,
-        };
-        const { data: created, error: createError } = await supabase
-          .from('profiles')
-          .insert(newProfile)
-          .select()
-          .single();
-
-        if (createError) {
-          console.error('Erro ao criar fallback de perfil:', createError);
-          return null;
-        }
-        if (created) {
-          setProfile(created as UserProfile);
-          return created as UserProfile;
-        }
-      } else {
+      if (data) {
         setProfile(data as UserProfile);
         return data as UserProfile;
+      } else {
+        console.warn('Aviso de integridade: Registro em public.profiles não encontrado para o usuário.');
+        setProfile(null);
+        return null;
       }
-    } catch (err) {
-      console.error('Exceção ao buscar perfil:', err);
+    } catch (err: any) {
+      console.error('Exceção ao buscar perfil:', err?.message || err);
       return null;
     }
-    return null;
   };
 
   const refreshProfile = async (): Promise<UserProfile | null> => {
     if (user) {
-      return await fetchProfile(user.id, user.email, user.user_metadata?.full_name);
+      return await fetchProfile(user.id);
     }
     return null;
   };
@@ -100,7 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           setUser(session.user);
-          await fetchProfile(session.user.id, session.user.email, session.user.user_metadata?.full_name);
+          await fetchProfile(session.user.id);
         } else {
           setUser(null);
           setProfile(null);
@@ -122,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (session?.user) {
         setUser(session.user);
-        await fetchProfile(session.user.id, session.user.email, session.user.user_metadata?.full_name);
+        await fetchProfile(session.user.id);
       } else {
         setUser(null);
         setProfile(null);
