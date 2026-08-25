@@ -48,22 +48,30 @@ export function saveExam(exam: LabExam): LabExam {
   if (isSupabaseConfigured) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
-        supabase.from('lab_exams').upsert({
-          id: exam.id.startsWith('exam-') ? undefined : exam.id,
+        const payload = {
           user_id: user.id,
           title: exam.title,
           category: exam.category,
-          exam_date: exam.exam_date,
-          laboratory: exam.laboratory,
-          doctor_name: exam.doctor_name,
-          ai_summary: exam.ai_summary,
-          ai_simple_translation: exam.ai_simple_translation,
-          ai_key_findings: exam.ai_key_findings,
+          exam_date: exam.exam_date || new Date().toISOString().split('T')[0],
+          laboratory: exam.laboratory || null,
+          doctor_name: exam.doctor_name || null,
+          ai_summary: exam.ai_summary || null,
+          ai_simple_translation: exam.ai_simple_translation || null,
+          ai_key_findings: exam.ai_key_findings || [],
           status: exam.status,
           updated_at: new Date().toISOString(),
-        }).then(({ error }) => {
-          if (error) console.error('Erro ao sincronizar exame com Supabase:', error);
-        });
+        };
+
+        const isLocalId = !exam.id || exam.id.startsWith('exam-');
+        if (isLocalId) {
+          supabase.from('lab_exams').insert(payload).then(({ error }) => {
+            if (error) console.error('Erro ao inserir exame no Supabase:', error.message);
+          });
+        } else {
+          supabase.from('lab_exams').update(payload).eq('id', exam.id).eq('user_id', user.id).then(({ error }) => {
+            if (error) console.error('Erro ao atualizar exame no Supabase:', error.message);
+          });
+        }
       }
     });
   }
@@ -102,20 +110,28 @@ export function saveIndicator(indicator: HealthIndicator): HealthIndicator {
   if (isSupabaseConfigured) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
-        supabase.from('health_indicators').upsert({
-          id: indicator.id.startsWith('ind-') ? undefined : indicator.id,
+        const payload = {
           user_id: user.id,
           name: indicator.name,
           category: indicator.category,
           value: indicator.value,
           unit: indicator.unit,
-          reference_min: indicator.reference_min,
-          reference_max: indicator.reference_max,
-          measured_at: indicator.measured_at,
+          reference_min: indicator.reference_min ?? null,
+          reference_max: indicator.reference_max ?? null,
+          measured_at: indicator.measured_at || new Date().toISOString(),
           status: indicator.status === 'normal' ? 'normal' : 'alerta',
-        }).then(({ error }) => {
-          if (error) console.error('Erro ao sincronizar indicador:', error);
-        });
+        };
+
+        const isLocalId = !indicator.id || indicator.id.startsWith('ind-');
+        if (isLocalId) {
+          supabase.from('health_indicators').insert(payload).then(({ error }) => {
+            if (error) console.error('Erro ao inserir indicador no Supabase:', error.message);
+          });
+        } else {
+          supabase.from('health_indicators').update(payload).eq('id', indicator.id).eq('user_id', user.id).then(({ error }) => {
+            if (error) console.error('Erro ao atualizar indicador no Supabase:', error.message);
+          });
+        }
       }
     });
   }
@@ -154,21 +170,29 @@ export function saveMedication(med: Medication): Medication {
   if (isSupabaseConfigured) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
-        supabase.from('medications').upsert({
-          id: med.id.startsWith('med-') ? undefined : med.id,
+        const payload = {
           user_id: user.id,
           name: med.name,
           dosage: med.dosage,
           frequency: med.frequency,
-          schedule_times: med.schedule_times,
-          instructions: med.instructions,
-          prescribed_by: med.prescribed_by,
-          is_continuous: med.is_continuous,
-          is_active: med.is_active,
+          schedule_times: med.schedule_times || [],
+          instructions: med.instructions || null,
+          prescribed_by: med.prescribed_by || null,
+          is_continuous: med.is_continuous ?? true,
+          is_active: med.is_active ?? true,
           updated_at: new Date().toISOString(),
-        }).then(({ error }) => {
-          if (error) console.error('Erro ao sincronizar medicamento:', error);
-        });
+        };
+
+        const isLocalId = !med.id || med.id.startsWith('med-');
+        if (isLocalId) {
+          supabase.from('medications').insert(payload).then(({ error }) => {
+            if (error) console.error('Erro ao inserir medicamento no Supabase:', error.message);
+          });
+        } else {
+          supabase.from('medications').update(payload).eq('id', med.id).eq('user_id', user.id).then(({ error }) => {
+            if (error) console.error('Erro ao atualizar medicamento no Supabase:', error.message);
+          });
+        }
       }
     });
   }
@@ -207,19 +231,27 @@ export function saveHealthRecord(record: HealthRecord): HealthRecord {
   if (isSupabaseConfigured) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
-        supabase.from('health_records').upsert({
-          id: record.id.startsWith('rec-') ? undefined : record.id,
+        const payload = {
           user_id: user.id,
           record_type: record.record_type,
           title: record.title,
-          description: record.description,
-          doctor_or_institution: record.doctor_or_institution,
-          event_date: record.event_date,
-          tags: record.tags,
+          description: record.description || null,
+          doctor_or_institution: record.doctor_or_institution || null,
+          event_date: record.event_date || new Date().toISOString().split('T')[0],
+          tags: record.tags || [],
           updated_at: new Date().toISOString(),
-        }).then(({ error }) => {
-          if (error) console.error('Erro ao sincronizar registro clínico:', error);
-        });
+        };
+
+        const isLocalId = !record.id || record.id.startsWith('rec-');
+        if (isLocalId) {
+          supabase.from('health_records').insert(payload).then(({ error }) => {
+            if (error) console.error('Erro ao inserir registro clínico no Supabase:', error.message);
+          });
+        } else {
+          supabase.from('health_records').update(payload).eq('id', record.id).eq('user_id', user.id).then(({ error }) => {
+            if (error) console.error('Erro ao atualizar registro clínico no Supabase:', error.message);
+          });
+        }
       }
     });
   }

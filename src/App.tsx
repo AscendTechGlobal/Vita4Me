@@ -333,20 +333,34 @@ const MainAppContent: React.FC = () => {
             initialName={profile?.full_name || ""}
             initialProfile={profile}
             onSaveCompleted={async (data) => {
-              if (!user) return false;
+              if (!user) {
+                return { success: false, error: "Sessão de usuário não encontrada. Faça login novamente." };
+              }
 
-              const payload = {
-                full_name: data.name?.trim() || 'Usuário',
-                date_of_birth: data.birthDate ? data.birthDate : null,
-                gender: data.gender || null,
-                blood_type: data.bloodType || null,
-                height_cm: Number(data.height) > 0 ? Number(data.height) : null,
-                weight_kg: Number(data.weight) > 0 ? Number(data.weight) : null,
-                smoking_status: data.smoking || null,
-                alcohol_status: data.alcohol || null,
-                activity_level: data.activity || null,
-                chronic_conditions: Array.isArray(data.chronicConditions) ? data.chronicConditions : [],
-                allergies: Array.isArray(data.allergies) ? data.allergies : [],
+              // 1. Normalização estrita de dados antes do envio
+              const validBirthDate = data.birthDate && /^\d{4}-\d{2}-\d{2}$/.test(data.birthDate)
+                ? data.birthDate
+                : null;
+
+              const validHeight = Number(data.height) > 0 ? Number(data.height) : null;
+              const validWeight = Number(data.weight) > 0 ? Number(data.weight) : null;
+
+              const profilePayload = {
+                full_name: data.name?.trim() || null,
+                date_of_birth: validBirthDate,
+                gender: data.gender?.trim() || null,
+                blood_type: data.bloodType?.trim() || null,
+                height_cm: validHeight,
+                weight_kg: validWeight,
+                smoking_status: data.smoking?.trim() || null,
+                alcohol_status: data.alcohol?.trim() || null,
+                activity_level: data.activity?.trim() || null,
+                chronic_conditions: Array.isArray(data.chronicConditions)
+                  ? data.chronicConditions.map((c: string) => c.trim()).filter(Boolean)
+                  : [],
+                allergies: Array.isArray(data.allergies)
+                  ? data.allergies.map((a: string) => a.trim()).filter(Boolean)
+                  : [],
                 emergency_contact_name: data.emergencyName?.trim() || null,
                 emergency_contact_phone: data.emergencyPhone?.trim() || null,
                 onboarding_completed: true,
@@ -354,30 +368,99 @@ const MainAppContent: React.FC = () => {
               };
 
               if (isSupabaseConfigured) {
-                const { data: updated, error } = await supabase
+                // 2. Persistir Perfil no Supabase
+                const { data: updatedProfile, error: profileError } = await supabase
                   .from('profiles')
-                  .update(payload)
+                  .update(profilePayload)
                   .eq('id', user.id)
                   .select()
                   .single();
 
-                if (error) {
-                  console.error("Erro ao salvar anamnese no Supabase:", error);
-                  alert("Não foi possível salvar os dados no servidor: " + error.message);
-                  return false;
+                if (profileError) {
+                  console.error("Erro técnico ao atualizar public.profiles:", profileError.message);
+                  return {
+                    success: false,
+                    error: "Não foi possível salvar sua anamnese no servidor. Tente novamente.",
+                  };
                 }
 
-                if (!updated || updated.onboarding_completed !== true) {
-                  console.error("Supabase não confirmou onboarding_completed = true", updated);
-                  alert("Erro de sincronização com o banco de dados. Tente novamente.");
-                  return false;
+                if (!updatedProfile || updatedProfile.onboarding_completed !== true) {
+                  console.error("Supabase não confirmou onboarding_completed = true:", updatedProfile);
+                  return {
+                    success: false,
+                    error: "Não foi possível confirmar o salvamento da anamnese. Tente novamente.",
+                  };
+                }
+
+                // 3. Persistir Indicador de Peso inicial no Supabase (se fornecido)
+                if (validWeight) {
+                  const { error: indError } = await supabase
+                    .from('health_indicators')
+                    .insert({
+                      user_id: user.id,
+                      name: 'Peso',
+                      category: 'Vital',
+                      value: validWeight,
+                      unit: 'kg',
+                      measured_at: new Date().toISOString(),
+                      status: 'normal',
+                    });
+                  if (indError) {
+                    console.warn("Aviso ao salvar indicador de peso:", indError.message);
+                  }
+                }
+
+                // 4. Persistir Medicamentos contínuos no Supabase (se fornecidos)
+                if (Array.isArray(data.medications) && data.medications.length > 0) {
+                  for (const med of data.medications) {
+                    if (med.name?.trim()) {
+                      const { error: medError } = await supabase
+                        .from('medications')
+                        .insert({
+                          user_id: user.id,
+                          name: med.name.trim(),
+                          dosage: med.dosage?.trim() || '1 dose',
+                          frequency: med.frequency?.trim() || '1x ao dia',
+                          schedule_times: med.schedule ? [med.schedule] : ['08:00'],
+                          is_continuous: true,
+                          is_active: true,
+                          updated_at: new Date().toISOString(),
+                        });
+                      if (medError) {
+                        console.warn("Aviso ao salvar medicamento:", medError.message);
+                      }
+                    }
+                  }
+                }
+
+                // 5. Persistir Alergias no histórico clínico do Supabase (se fornecidas)
+                if (Array.isArray(data.allergies) && data.allergies.length > 0) {
+                  for (const al of data.allergies) {
+                    if (al.trim()) {
+                      const { error: recError } = await supabase
+                        .from('health_records')
+                        .insert({
+                          user_id: user.id,
+                          record_type: 'alergia',
+                          title: `Alergia: ${al.trim()}`,
+                          description: 'Declarada na anamnese médica inicial.',
+                          event_date: new Date().toISOString().split('T')[0],
+                          tags: ['Alergia', 'Anamnese'],
+                          updated_at: new Date().toISOString(),
+                        });
+                      if (recError) {
+                        console.warn("Aviso ao salvar registro clínico de alergia:", recError.message);
+                      }
+                    }
+                  }
                 }
               }
 
+              // 6. Atualizar estado global e fechar modal
               await refreshProfile();
               refreshAllData();
               setIsOnboardingModalOpen(false);
-              return true;
+              return { success: true };
             }}
           />
         )}

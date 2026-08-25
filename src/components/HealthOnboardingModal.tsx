@@ -13,7 +13,8 @@ import {
   Flame, 
   Wine, 
   Cigarette,
-  Loader2
+  Loader2,
+  AlertCircle
 } from "lucide-react";
 import { FamilyMember, UserProfile } from "../types";
 import { saveIndicator, saveMedication, saveHealthRecord } from "../lib/healthStorage";
@@ -41,7 +42,7 @@ interface HealthOnboardingModalProps {
     medications: Array<{ name: string; dosage: string; frequency: string; schedule: string }>;
     emergencyName: string;
     emergencyPhone: string;
-  }) => Promise<boolean | void> | void;
+  }) => Promise<{ success: boolean; error?: string } | boolean | void> | void;
 }
 
 export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
@@ -54,6 +55,7 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
 }) => {
   const [step, setStep] = useState<number>(1);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -136,6 +138,7 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
   };
 
   const handleFinalSubmit = async () => {
+    setErrorMessage(null);
     setIsSaving(true);
     try {
       const allergiesArray = allergiesText
@@ -186,7 +189,7 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
         });
       });
 
-      const success = await onSaveCompleted({
+      const result = await onSaveCompleted({
         name: name.trim() || "Paciente",
         birthDate,
         gender,
@@ -203,12 +206,23 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
         emergencyPhone: emergencyPhone.trim(),
       });
 
-      trackEvent('onboarding_completed', { targetType });
-      if (success !== false) {
-        onClose();
+      if (result && typeof result === "object" && !result.success) {
+        setErrorMessage(result.error || "Não foi possível salvar sua anamnese. Tente novamente.");
+        setIsSaving(false);
+        return;
       }
-    } catch (err) {
-      console.error("Erro no salvamento da anamnese:", err);
+
+      if (result === false) {
+        setErrorMessage("Não foi possível salvar sua anamnese. Tente novamente.");
+        setIsSaving(false);
+        return;
+      }
+
+      trackEvent('onboarding_completed', { targetType });
+      onClose();
+    } catch (err: any) {
+      console.error("Erro no salvamento da anamnese:", err?.message || err);
+      setErrorMessage("Não foi possível salvar sua anamnese. Tente novamente.");
     } finally {
       setIsSaving(false);
     }
@@ -606,6 +620,14 @@ export const HealthOnboardingModal: React.FC<HealthOnboardingModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Error Banner */}
+        {errorMessage && (
+          <div className="mt-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center gap-2 text-xs text-rose-400">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
         {/* Footer Navigation Buttons */}
         <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
