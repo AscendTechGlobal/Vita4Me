@@ -15,32 +15,9 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<{ error: string | null }>;
   updateUserPassword: (password: string) => Promise<{ error: string | null }>;
-  loginAsDemo: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const DEMO_USER: any = {
-  id: 'demo-user-healthai',
-  email: 'usuario@healthai.app',
-  user_metadata: { full_name: 'Eduardo Weber (Demo)' },
-};
-
-const DEMO_PROFILE: UserProfile = {
-  id: 'demo-user-vita4me',
-  email: 'usuario@vita4me.app',
-  full_name: 'Eduardo Weber (Demo)',
-  blood_type: 'O+',
-  date_of_birth: '1988-06-14',
-  gender: 'Masculino',
-  emergency_contact_name: 'Camila Weber',
-  emergency_contact_phone: '+55 11 98888-7777',
-  plan_tier: 'individual',
-  subscription_status: 'inactive',
-  ai_credits: 0,
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -49,6 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   const fetchProfile = async (userId: string, userEmail?: string, fullNameMeta?: string) => {
+    if (!isSupabaseConfigured) return;
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -57,7 +35,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       if (error && error.code === 'PGRST116') {
-        // Profile not created yet, create it with inactive subscription until Stripe confirms
+        // Se o profile ainda não foi criado pela trigger, tentar inicializar com segurança
         const newProfile: Partial<UserProfile> = {
           id: userId,
           email: userEmail || '',
@@ -76,27 +54,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setProfile(data as UserProfile);
       }
     } catch (err) {
-      console.error('Error fetching profile:', err);
+      console.error('Erro ao carregar perfil:', err);
     }
   };
 
   useEffect(() => {
-    // Check URL for recovery tokens
+    // Verificar tokens de recuperação na URL
     if (window.location.hash.includes('type=recovery')) {
       setIsPasswordRecovery(true);
     }
 
     if (!isSupabaseConfigured) {
-      const isDemoLoggedIn = localStorage.getItem('healthai_demo_auth') === 'true';
-      if (isDemoLoggedIn) {
-        setUser(DEMO_USER);
-        setProfile(DEMO_PROFILE);
-      }
       setIsLoading(false);
       return;
     }
 
-    // Get current session
+    // Obter sessão atual
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         setUser(session.user);
@@ -105,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
     });
 
-    // Listen to Auth State Changes
+    // Escutar mudanças de autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);
@@ -128,61 +101,83 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithEmail = async (email: string, password: string) => {
     if (!isSupabaseConfigured) {
-      loginAsDemo();
-      return { error: null };
+      return { error: "Serviço de autenticação não configurado no ambiente." };
     }
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error ? error.message : null };
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) {
+      let message = "E-mail ou senha incorretos.";
+      if (error.message?.includes("Invalid login credentials")) {
+        message = "E-mail ou senha incorretos. Verifique suas credenciais.";
+      } else if (error.message?.includes("Email not confirmed")) {
+        message = "E-mail ainda não confirmado. Verifique sua caixa de entrada.";
+      }
+      return { error: message };
+    }
+    return { error: null };
   };
 
   const signUpWithEmail = async (email: string, password: string, fullName?: string) => {
     if (!isSupabaseConfigured) {
-      loginAsDemo();
-      return { error: null };
+      return { error: "Serviço de autenticação não configurado no ambiente." };
     }
     const { error } = await supabase.auth.signUp({
-      email,
+      email: email.trim(),
       password,
       options: {
-        data: { full_name: fullName },
+        data: { full_name: fullName?.trim() || '' },
       },
     });
-    return { error: error ? error.message : null };
+    if (error) {
+      let message = "Não foi possível criar sua conta. Tente novamente em alguns instantes.";
+      if (error.message?.includes("User already registered") || error.message?.includes("already exists")) {
+        message = "Este e-mail já está cadastrado. Faça login ou solicite recuperação de senha.";
+      } else if (error.message?.includes("Password should be")) {
+        message = "A senha informada não atende aos critérios mínimos de segurança.";
+      } else if (error.message?.includes("valid email") || error.message?.includes("invalid email")) {
+        message = "Por favor, insira um endereço de e-mail válido.";
+      } else if (error.message?.includes("Database error")) {
+        message = "Não foi possível inicializar seu prontuário no momento. Tente novamente em alguns instantes.";
+      }
+      return { error: message };
+    }
+    return { error: null };
   };
 
   const resetPasswordForEmail = async (email: string) => {
     if (!isSupabaseConfigured) {
-      alert("No modo de demonstração local, a recuperação de senha é simulada com sucesso.");
-      return { error: null };
+      return { error: "Serviço de autenticação não configurado." };
     }
     const redirectUrl = `${window.location.origin}/#reset-password`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: redirectUrl,
     });
-    return { error: error ? error.message : null };
+    if (error) {
+      return { error: "Não foi possível enviar o link de recuperação. Verifique o e-mail informado." };
+    }
+    return { error: null };
   };
 
   const updateUserPassword = async (password: string) => {
     if (!isSupabaseConfigured) {
-      return { error: null };
+      return { error: "Serviço de autenticação não configurado." };
     }
     const { error } = await supabase.auth.updateUser({ password });
-    return { error: error ? error.message : null };
+    if (error) {
+      return { error: "Não foi possível atualizar a senha. Tente novamente." };
+    }
+    return { error: null };
   };
 
   const signOut = async () => {
-    localStorage.removeItem('healthai_demo_auth');
     if (isSupabaseConfigured) {
-      await supabase.auth.signOut();
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.error("Erro no signOut:", err);
+      }
     }
     setUser(null);
     setProfile(null);
-  };
-
-  const loginAsDemo = () => {
-    localStorage.setItem('healthai_demo_auth', 'true');
-    setUser(DEMO_USER);
-    setProfile(DEMO_PROFILE);
   };
 
   return (
@@ -199,7 +194,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOut,
         resetPasswordForEmail,
         updateUserPassword,
-        loginAsDemo,
       }}
     >
       {children}

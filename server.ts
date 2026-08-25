@@ -462,18 +462,9 @@ const requireAuth = async (req: AuthenticatedRequest, res: Response, next: NextF
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
 
-  // Em ambiente local sem Supabase configurado, permitir fallback para modo demo APENAS em desenvolvimento
   if (!supabaseAdmin) {
-    if (IS_PROD) {
-      console.error("🚨 [CRÍTICO] Tentativa de autenticação em produção sem Supabase configurado.");
-      return res.status(500).json({ error: "Serviço de autenticação temporariamente indisponível." });
-    }
-    req.user = {
-      id: "demo-user-healthai",
-      email: "usuario@vita4me.app",
-      role: "authenticated",
-    };
-    return next();
+    console.error("🚨 [CRÍTICO] Tentativa de autenticação sem Supabase configurado.");
+    return res.status(503).json({ error: "Serviço de autenticação temporariamente indisponível." });
   }
 
   if (!token) {
@@ -541,9 +532,8 @@ const optionalAuth = async (req: AuthenticatedRequest, res: Response, next: Next
 const requireAiAccess = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const userId = req.user?.id;
 
-  // Em ambiente local sem Supabase configurado ou usuário demo
-  if (!supabaseAdmin || userId === "demo-user-healthai") {
-    return next();
+  if (!supabaseAdmin) {
+    return res.status(503).json({ error: "Serviço de banco de dados temporariamente indisponível." });
   }
 
   if (!userId) {

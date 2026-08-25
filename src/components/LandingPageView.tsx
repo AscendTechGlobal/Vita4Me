@@ -241,11 +241,11 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             </button>
 
             <button
-              onClick={onEnterApp}
+              onClick={onOpenAuthModal}
               className="w-full sm:w-auto px-7 py-4 rounded-2xl bg-[#0A3B2E] hover:bg-[#126D4A]/60 border border-[#126D4A] hover:border-[#7AC943]/60 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
             >
-              <Eye className="w-4 h-4 text-[#7AC943]" />
-              <span>Ver Demonstração da Plataforma</span>
+              <Lock className="w-4 h-4 text-[#7AC943]" />
+              <span>Acessar Prontuário</span>
             </button>
           </div>
 

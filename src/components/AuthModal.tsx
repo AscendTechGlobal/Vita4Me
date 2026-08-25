@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { trackEvent } from "../lib/analytics";
 import { LegalDocumentsModal, LegalTab } from "./LegalDocumentsModal";
@@ -11,12 +11,8 @@ import {
   User,
   ArrowRight,
   Loader2,
-  ShieldCheck,
   AlertCircle,
   CheckCircle2,
-  Activity,
-  Heart,
-  KeyRound,
 } from "lucide-react";
 
 interface AuthModalProps {
@@ -29,17 +25,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     signInWithEmail,
     signUpWithEmail,
     resetPasswordForEmail,
-    loginAsDemo,
-    isConfigured,
   } = useAuth();
 
   const [tab, setTab] = useState<"login" | "signup" | "reset">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [fullName, setFullName] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [healthConsentAccepted, setHealthConsentAccepted] = useState(false);
-  const [legalModalTab, setLegalModalTab] = useState<"privacidade" | "termos" | null>(null);
+  const [legalModalTab, setLegalModalTab] = useState<LegalTab | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -55,6 +52,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, legalModalTab, onClose]);
 
+  // Real-time password criteria validation
+  const passwordCriteria = useMemo(() => {
+    const hasMinLength = password.length >= 8;
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecialChar = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(password);
+    const isStrong = hasMinLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar;
+    const passwordsMatch = password.length > 0 && password === confirmPassword;
+
+    return {
+      hasMinLength,
+      hasUpperCase,
+      hasLowerCase,
+      hasNumber,
+      hasSpecialChar,
+      isStrong,
+      passwordsMatch,
+    };
+  }, [password, confirmPassword]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -65,7 +83,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
     try {
       if (tab === "login") {
-        if (!email || !password) {
+        if (!email.trim() || !password) {
           setErrorMsg("Preencha e-mail e senha.");
           return;
         }
@@ -77,12 +95,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           onClose();
         }
       } else if (tab === "signup") {
-        if (!email || !password || !fullName) {
-          setErrorMsg("Preencha todos os campos.");
+        if (!email.trim() || !password || !confirmPassword || !fullName.trim()) {
+          setErrorMsg("Por favor, preencha todos os campos do formulário.");
           return;
         }
-        if (password.length < 6) {
-          setErrorMsg("A senha deve ter no mínimo 6 caracteres.");
+        if (!passwordCriteria.isStrong) {
+          setErrorMsg("A senha deve cumprir todos os requisitos de segurança (8+ dígitos, maiúscula, minúscula, número e caractere especial).");
+          return;
+        }
+        if (password !== confirmPassword) {
+          setErrorMsg("A confirmação de senha não coincide com a senha digitada.");
           return;
         }
         if (!termsAccepted) {
@@ -93,16 +115,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           setErrorMsg("É obrigatório autorizar o tratamento de dados de saúde para criar o prontuário.");
           return;
         }
+
         const { error } = await signUpWithEmail(email, password, fullName);
         if (error) {
           setErrorMsg(error);
         } else {
           trackEvent('signup_completed', { source: 'email_password' });
-          setSuccessMsg("Conta criada com sucesso! Verifique seu e-mail ou faça login.");
-          setTimeout(() => setTab("login"), 2000);
+          setSuccessMsg("Conta criada com sucesso! Verifique seu e-mail ou faça login para acessar seu prontuário.");
+          setTimeout(() => setTab("login"), 2500);
         }
       } else if (tab === "reset") {
-        if (!email) {
+        if (!email.trim()) {
           setErrorMsg("Informe seu e-mail cadastrado.");
           return;
         }
@@ -118,10 +141,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleDemoAccess = () => {
-    loginAsDemo();
-    onClose();
-  };
+  const isSignupDisabled =
+    isLoading ||
+    (tab === "signup" &&
+      (!passwordCriteria.isStrong ||
+        !passwordCriteria.passwordsMatch ||
+        !termsAccepted ||
+        !healthConsentAccepted ||
+        !fullName.trim() ||
+        !email.trim()));
 
   return (
     <div 
@@ -135,6 +163,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         <button
           onClick={onClose}
           className="absolute right-5 top-5 p-2 rounded-xl text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+          aria-label="Fechar modal"
         >
           <X className="w-5 h-5" />
         </button>
@@ -145,7 +174,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             <img
               src="/logo-full-transparent.png"
               alt="Vita4Me"
-              className="h-16 w-auto object-contain drop-shadow-xs"
+              className="h-14 w-auto object-contain drop-shadow-xs"
             />
           </div>
           <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -154,24 +183,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             {tab === "reset" && "Recuperar Senha"}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            {tab === "login" && "Centralize sua jornada médica e exames em um só lugar."}
-            {tab === "signup" && "Comece a organizar exames e indicadores de saúde com IA."}
+            {tab === "login" && "Centralize sua jornada médica e exames em um só lugar seguro."}
+            {tab === "signup" && "Comece a organizar exames e biomarcadores de saúde com IA."}
             {tab === "reset" && "Digite seu e-mail para receber as instruções de recuperação."}
           </p>
         </div>
 
-        {/* Supabase Status Indicator */}
-        {!isConfigured && (
-          <div className="mb-4 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-[11px] flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 truncate">
-              <Activity className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-              <span className="truncate">Modo Demonstração Ativo</span>
-            </div>
-          </div>
-        )}
-
         {/* Tabs Switcher */}
-        <div className="flex bg-slate-100 dark:bg-slate-950/80 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 mb-6">
+        <div className="flex bg-slate-100 dark:bg-slate-950/80 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 mb-5">
           <button
             type="button"
             onClick={() => { setTab("login"); setErrorMsg(null); setSuccessMsg(null); }}
@@ -200,22 +219,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         {errorMsg && (
           <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 rounded-xl text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
-            <span>{errorMsg}</span>
+            <span className="leading-snug">{errorMsg}</span>
           </div>
         )}
 
         {successMsg && (
           <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-xl text-xs flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span>{successMsg}</span>
+            <span className="leading-snug">{successMsg}</span>
           </div>
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3.5">
           {tab === "signup" && (
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Nome Completo
               </label>
               <div className="relative">
@@ -233,7 +252,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
               E-mail
             </label>
             <div className="relative">
@@ -250,31 +269,132 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           </div>
 
           {tab !== "reset" && (
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Senha
-                </label>
-                {tab === "login" && (
+            <>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Senha
+                  </label>
+                  {tab === "login" && (
+                    <button
+                      type="button"
+                      onClick={() => { setTab("reset"); setErrorMsg(null); setSuccessMsg(null); }}
+                      className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium transition cursor-pointer"
+                    >
+                      Esqueceu a senha?
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition"
+                  />
                   <button
                     type="button"
-                    onClick={() => { setTab("reset"); setErrorMsg(null); setSuccessMsg(null); }}
-                    className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium transition cursor-pointer"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+                    aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
                   >
-                    Esqueceu a senha?
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
-                )}
+                </div>
               </div>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition"
-                />
+
+              {tab === "signup" && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Confirmar Senha
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      required
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+                      aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Ver confirmação de senha"}
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Real-time Password Security Checklist (Sign-up only) */}
+          {tab === "signup" && (
+            <div className="p-3 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2 text-[11px]">
+              <span className="font-semibold text-slate-700 dark:text-slate-300 block">
+                Requisitos de Segurança da Senha:
+              </span>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                <div className={`flex items-center gap-1.5 transition-colors ${passwordCriteria.hasMinLength ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                  {passwordCriteria.hasMinLength ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <div className="w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-700 shrink-0" />
+                  )}
+                  <span>8+ caracteres</span>
+                </div>
+
+                <div className={`flex items-center gap-1.5 transition-colors ${passwordCriteria.hasUpperCase ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                  {passwordCriteria.hasUpperCase ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <div className="w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-700 shrink-0" />
+                  )}
+                  <span>Letra maiúscula</span>
+                </div>
+
+                <div className={`flex items-center gap-1.5 transition-colors ${passwordCriteria.hasLowerCase ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                  {passwordCriteria.hasLowerCase ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <div className="w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-700 shrink-0" />
+                  )}
+                  <span>Letra minúscula</span>
+                </div>
+
+                <div className={`flex items-center gap-1.5 transition-colors ${passwordCriteria.hasNumber ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                  {passwordCriteria.hasNumber ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <div className="w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-700 shrink-0" />
+                  )}
+                  <span>Número</span>
+                </div>
+
+                <div className={`flex items-center gap-1.5 transition-colors ${passwordCriteria.hasSpecialChar ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                  {passwordCriteria.hasSpecialChar ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <div className="w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-700 shrink-0" />
+                  )}
+                  <span>Caractere especial</span>
+                </div>
+
+                <div className={`flex items-center gap-1.5 transition-colors ${passwordCriteria.passwordsMatch ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-400'}`}>
+                  {passwordCriteria.passwordsMatch ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <div className="w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-700 shrink-0" />
+                  )}
+                  <span>Senhas conferem</span>
+                </div>
               </div>
             </div>
           )}
@@ -325,8 +445,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
           <button
             type="submit"
-            disabled={isLoading}
-            className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
+            disabled={isSignupDisabled}
+            className="w-full mt-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <>
@@ -345,21 +465,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             )}
           </button>
         </form>
-
-        {/* Demo Mode Button */}
-        <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800 text-center space-y-2">
-          <button
-            type="button"
-            onClick={handleDemoAccess}
-            className="w-full py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
-          >
-            <Eye className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Entrar como Demonstração (Sem Login)</span>
-          </button>
-          <p className="text-[10px] text-slate-500">
-            Acesso local instantâneo com prontuário e exames de exemplo.
-          </p>
-        </div>
       </div>
 
       {/* Embedded Legal Documents Modal */}

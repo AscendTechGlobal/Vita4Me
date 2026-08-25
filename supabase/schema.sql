@@ -96,27 +96,64 @@ grant all on public.profiles to service_role;
 
 -- Trigger: Create Profile automatically on SignUp (Inicialmente Inativo até confirmação do Stripe)
 create or replace function public.handle_new_user()
-returns trigger as $$
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+declare
+  v_full_name text;
+  v_email text;
 begin
-  insert into public.profiles (id, email, full_name, plan_tier, subscription_status, ai_credits, onboarding_completed)
+  v_email := coalesce(new.email, '');
+
+  v_full_name := coalesce(
+    nullif(trim(new.raw_user_meta_data->>'full_name'), ''),
+    nullif(trim(split_part(v_email, '@', 1)), ''),
+    'Usuário Vita4Me'
+  );
+
+  insert into public.profiles (
+    id,
+    email,
+    full_name,
+    plan_tier,
+    subscription_status,
+    ai_credits,
+    onboarding_completed,
+    created_at,
+    updated_at
+  )
   values (
     new.id,
-    new.email,
-    pg_catalog.coalesce(new.raw_user_meta_data->>'full_name', pg_catalog.split_part(new.email, '@', 1)),
+    v_email,
+    v_full_name,
     'individual',
     'inactive',
     0,
-    false
+    false,
+    now(),
+    now()
   )
-  on conflict (id) do nothing;
+  on conflict (id) do update set
+    email = excluded.email,
+    full_name = coalesce(public.profiles.full_name, excluded.full_name),
+    updated_at = now();
+
   return new;
+exception
+  when others then
+    raise warning 'handle_new_user warning for user %: %', new.id, sqlerrm;
+    return new;
 end;
-$$ language plpgsql security definer set search_path = '';
+$$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute procedure public.handle_new_user();
+  for each row execute function public.handle_new_user();
+
+grant execute on function public.handle_new_user() to supabase_auth_admin, service_role, postgres;
 
 -- ==============================================================================
 -- 2.1 ATOMIC AI CREDIT CONSUMPTION & QUOTA LOCKING (PREVINE RACE CONDITIONS)

@@ -44,7 +44,7 @@ import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, Daily
 import { trackEvent, trackPageView } from "./lib/analytics";
 
 const MainAppContent: React.FC = () => {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const [viewMode, setViewMode] = useState<"landing" | "app">("landing");
   const [currentTab, setCurrentTab] = useState<ActiveTab>("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -94,9 +94,20 @@ const MainAppContent: React.FC = () => {
         trackEvent('trial_started', { plan_tier: plan });
         trackEvent('subscription_activated', { plan_tier: plan });
       }
-      setViewMode('app');
+      if (user) {
+        setViewMode('app');
+      }
     }
   }, []);
+
+  // Transição reativa de tela conforme o estado real de autenticação do Supabase
+  useEffect(() => {
+    if (user) {
+      setViewMode("app");
+    } else {
+      setViewMode("landing");
+    }
+  }, [user]);
 
   const activeMember = familyMembers.find(f => f.id === activeMemberId) || familyMembers[0] || null;
 
@@ -116,9 +127,15 @@ const MainAppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-[#7AC943] selection:text-[#0A3B2E]">
-      {viewMode === "landing" ? (
+      {viewMode === "landing" || !user ? (
         <LandingPageView
-          onEnterApp={() => setViewMode("app")}
+          onEnterApp={() => {
+            if (user) {
+              setViewMode("app");
+            } else {
+              setIsAuthModalOpen(true);
+            }
+          }}
           onOpenAuthModal={() => setIsAuthModalOpen(true)}
           onOpenBillingModal={() => setIsBillingModalOpen(true)}
         />
