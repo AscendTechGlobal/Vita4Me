@@ -47,8 +47,8 @@
     "@tailwindcss/oxide-win32-x64-msvc": "4.3.3"
   },
   "engines": {
-    "node": ">=20.0.0",
-    "npm": ">=10.0.0"
+    "node": "22.x",
+    "npm": "10.x"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",
