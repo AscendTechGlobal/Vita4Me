@@ -179,6 +179,29 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         ))}
       </div>
 
+      {filteredRecords.length === 0 && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-10 text-center space-y-4 shadow-xs">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
+            <Calendar className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              Nenhum evento clínico registrado
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+              Registre suas consultas passadas, vacinas, cirurgias ou histórico de alergias para construir sua linha do tempo contínua.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition inline-flex items-center gap-2 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Cadastrar evento médico</span>
+          </button>
+        </div>
+      )}
+
       {/* Add Modal */}
       {showAddModal && (
         <div 

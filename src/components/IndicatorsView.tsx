@@ -145,16 +145,23 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
             </span>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-3xl font-black text-slate-900 dark:text-white font-mono">
-                {latestVal ? latestVal.value : '0'}
+                {latestVal ? latestVal.value : '—'}
               </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">{latestVal?.unit || 'mg/dL'}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {latestVal ? latestVal.unit : (markerOptions.find(o => o.name === selectedMarker)?.unit || '')}
+              </span>
             </div>
           </div>
 
           <div className="text-right text-xs bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-0.5">
             <span className="text-[10px] uppercase font-bold text-slate-500 block">Faixa de Referência Ideal:</span>
             <strong className="text-emerald-700 dark:text-emerald-400 font-mono font-bold">
-              {latestVal?.reference_min || 70} - {latestVal?.reference_max || 99} {latestVal?.unit}
+              {latestVal ? `${latestVal.reference_min} - ${latestVal.reference_max} ${latestVal.unit}` : (
+                (() => {
+                  const opt = markerOptions.find(o => o.name === selectedMarker);
+                  return opt ? `${opt.min} - ${opt.max} ${opt.unit}` : 'Definido no laudo';
+                })()
+              )}
             </strong>
           </div>
         </div>
@@ -196,27 +203,33 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
         {/* Measurement History Table */}
         <div className="space-y-3">
           <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Histórico de Coletas</h3>
-          <div className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden text-xs">
-            {markerData.map((d) => (
-              <div key={d.id} className="p-3.5 bg-white dark:bg-slate-950 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-slate-500 dark:text-slate-400 font-mono">
-                    {new Date(d.measured_at).toLocaleDateString('pt-BR')}
-                  </span>
-                  <span className="font-bold text-slate-900 dark:text-white font-mono">
-                    {d.value} {d.unit}
+          {markerData.length > 0 ? (
+            <div className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden text-xs">
+              {markerData.map((d) => (
+                <div key={d.id} className="p-3.5 bg-white dark:bg-slate-950 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-slate-500 dark:text-slate-400 font-mono">
+                      {new Date(d.measured_at).toLocaleDateString('pt-BR')}
+                    </span>
+                    <span className="font-bold text-slate-900 dark:text-white font-mono">
+                      {d.value} {d.unit}
+                    </span>
+                  </div>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                    d.status === 'normal'
+                      ? "bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                      : "bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                  }`}>
+                    {d.status === 'normal' ? 'Normal' : 'Atenção'}
                   </span>
                 </div>
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  d.status === 'normal'
-                    ? "bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-                    : "bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
-                }`}>
-                  {d.status === 'normal' ? 'Normal' : 'Atenção'}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-6 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500">
+              Sem coletas salvas para este marcador. Clique em "Registrar Nova Medição" para adicionar.
+            </div>
+          )}
         </div>
       </div>
 

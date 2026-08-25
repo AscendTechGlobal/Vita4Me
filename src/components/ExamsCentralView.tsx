@@ -280,6 +280,29 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
         ))}
       </div>
 
+      {filteredExams.length === 0 && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-10 text-center space-y-4 shadow-xs">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
+            <FileText className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              Nenhum exame encontrado
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+              Cadastre seu laudo laboratorial ou exame de imagem para que a inteligência clínica traduza e organize seus dados.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition inline-flex items-center gap-2 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Cadastrar primeiro exame</span>
+          </button>
+        </div>
+      )}
+
       {/* Modal: View Exam Details */}
       {selectedExam && (
         <div 

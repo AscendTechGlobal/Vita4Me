@@ -45,7 +45,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const activeMeds = medications.filter(m => m.is_active);
   const recentExams = exams.slice(0, 3);
 
-  // Quick vital indicators
+  // Quick vital indicators (buscados exclusivamente dos dados reais)
   const glucose = indicators.find(i => i.name.toLowerCase().includes('glic')) || null;
   const ldl = indicators.find(i => i.name.toLowerCase().includes('colesterol') || i.name.toLowerCase().includes('ldl')) || null;
   const vitD = indicators.find(i => i.name.toLowerCase().includes('vitamina')) || null;
@@ -113,12 +113,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-black text-slate-950 dark:text-white font-mono">
-              {glucose ? glucose.value : '92'}
+              {glucose ? glucose.value : '—'}
             </span>
             <span className="text-xs text-slate-500 dark:text-slate-400">{glucose?.unit || 'mg/dL'}</span>
           </div>
-          <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Nível ótimo (70 - 99 mg/dL)
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+            {glucose ? (
+              <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
+                <CheckCircle2 className="w-3 h-3" /> Nível registrado
+              </span>
+            ) : (
+              'Sem medição registrada'
+            )}
           </span>
         </div>
 
@@ -133,12 +139,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-black text-slate-950 dark:text-white font-mono">
-              {ldl ? ldl.value : '112'}
+              {ldl ? ldl.value : '—'}
             </span>
             <span className="text-xs text-slate-500 dark:text-slate-400">{ldl?.unit || 'mg/dL'}</span>
           </div>
-          <span className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold flex items-center gap-1">
-            <AlertCircle className="w-3 h-3" /> Atenção preventiva (&lt; 100 mg/dL)
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+            {ldl ? (
+              <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
+                <CheckCircle2 className="w-3 h-3" /> Nível registrado
+              </span>
+            ) : (
+              'Sem medição registrada'
+            )}
           </span>
         </div>
 
@@ -153,12 +165,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-black text-slate-950 dark:text-white font-mono">
-              {bp ? bp.value : '120/80'}
+              {systolic && diastolic ? `${systolic.value}/${diastolic.value}` : bp ? bp.value : '—'}
             </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">{bp?.unit || 'mmHg'}</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">mmHg</span>
           </div>
-          <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Faixa ideal
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+            {systolic || bp ? (
+              <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
+                <CheckCircle2 className="w-3 h-3" /> Nível registrado
+              </span>
+            ) : (
+              'Sem medição registrada'
+            )}
           </span>
         </div>
 
@@ -173,32 +191,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-black text-slate-950 dark:text-white font-mono">
-              {vitD ? vitD.value : '42.0'}
+              {vitD ? vitD.value : '—'}
             </span>
             <span className="text-xs text-slate-500 dark:text-slate-400">{vitD?.unit || 'ng/mL'}</span>
           </div>
-          <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Nível ótimo (30 - 60 ng/mL)
-          </span>
-        </div>
-
-        {/* Pressão Arterial */}
-        <div 
-          onClick={() => onNavigate('indicators')}
-          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 p-5 rounded-2xl space-y-2 transition cursor-pointer group shadow-xs"
-        >
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Pressão Arterial</span>
-            <Activity className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition" />
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-black text-slate-950 dark:text-white font-mono">
-              {systolic && diastolic ? `${systolic.value}/${diastolic.value}` : '120/80'}
-            </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">mmHg</span>
-          </div>
-          <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Pressão normal ótima
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+            {vitD ? (
+              <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
+                <CheckCircle2 className="w-3 h-3" /> Nível registrado
+              </span>
+            ) : (
+              'Sem medição registrada'
+            )}
           </span>
         </div>
       </div>
@@ -212,61 +216,86 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <FileText className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               <span>Últimos Exames & Tradução Clínica</span>
             </h2>
-            <button
-              onClick={() => onNavigate('exams')}
-              className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
-            >
-              <span>Ver todos ({exams.length})</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {recentExams.map(exam => (
-              <div 
-                key={exam.id}
+            {exams.length > 0 && (
+              <button
                 onClick={() => onNavigate('exams')}
-                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 p-5 rounded-2xl space-y-3 transition cursor-pointer group shadow-xs"
+                className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <span className="px-2.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] font-bold uppercase font-mono">
-                      {exam.category}
-                    </span>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition">
-                      {exam.title}
-                    </h3>
-                  </div>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5" /> {exam.exam_date}
-                  </span>
-                </div>
-
-                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                  <strong className="text-emerald-700 dark:text-emerald-400 font-bold block mb-1">Explicação em Linguagem Didática:</strong>
-                  {exam.ai_simple_translation || exam.ai_summary}
-                </p>
-
-                {/* Findings chips */}
-                {exam.ai_key_findings && exam.ai_key_findings.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {exam.ai_key_findings.slice(0, 3).map((f, idx) => (
-                      <span 
-                        key={idx} 
-                        className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium flex items-center gap-1.5 ${
-                          f.status === 'normal'
-                            ? "bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800"
-                            : "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/40"
-                        }`}
-                      >
-                        <strong>{f.parameter}:</strong> {f.value}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+                <span>Ver todos ({exams.length})</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
+
+          {recentExams.length > 0 ? (
+            <div className="space-y-3">
+              {recentExams.map(exam => (
+                <div 
+                  key={exam.id}
+                  onClick={() => onNavigate('exams')}
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 p-5 rounded-2xl space-y-3 transition cursor-pointer group shadow-xs"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="px-2.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] font-bold uppercase font-mono">
+                        {exam.category}
+                      </span>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition">
+                        {exam.title}
+                      </h3>
+                    </div>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5" /> {exam.exam_date}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <strong className="text-emerald-700 dark:text-emerald-400 font-bold block mb-1">Explicação em Linguagem Didática:</strong>
+                    {exam.ai_simple_translation || exam.ai_summary}
+                  </p>
+
+                  {/* Findings chips */}
+                  {exam.ai_key_findings && exam.ai_key_findings.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {exam.ai_key_findings.slice(0, 3).map((f, idx) => (
+                        <span 
+                          key={idx} 
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium flex items-center gap-1.5 ${
+                            f.status === 'normal'
+                              ? "bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800"
+                              : "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/40"
+                          }`}
+                        >
+                          <strong>{f.parameter}:</strong> {f.value}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center space-y-3 shadow-xs">
+              <div className="mx-auto w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
+                <FileText className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Você ainda não possui exames cadastrados
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                  Cadastre seus exames de sangue ou imagem para traduzi-los com IA e acompanhar seu histórico.
+                </p>
+              </div>
+              <button
+                onClick={() => onNavigate('exams')}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Adicionar primeiro exame</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Right 1 Col: Active Medications & Daily Habits */}
@@ -286,19 +315,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </button>
             </div>
 
-            <div className="space-y-2.5">
-              {activeMeds.map(med => (
-                <div key={med.id} className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
-                  <div>
-                    <strong className="text-xs text-slate-900 dark:text-white block">{med.name}</strong>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">{med.dosage} &bull; {med.frequency}</span>
+            {activeMeds.length > 0 ? (
+              <div className="space-y-2.5">
+                {activeMeds.map(med => (
+                  <div key={med.id} className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                    <div>
+                      <strong className="text-xs text-slate-900 dark:text-white block">{med.name}</strong>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">{med.dosage} &bull; {med.frequency}</span>
+                    </div>
+                    <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-mono font-bold shrink-0">
+                      {med.schedule_times[0] || 'Ativo'}
+                    </span>
                   </div>
-                  <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-mono font-bold shrink-0">
-                    {med.schedule_times[0] || 'Ativo'}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-2">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Nenhum medicamento cadastrado em uso contínuo.
+                </p>
+                <button
+                  onClick={() => onNavigate('medications')}
+                  className="text-xs text-emerald-600 dark:text-emerald-400 font-bold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Cadastrar medicação</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Daily Habits Widget */}

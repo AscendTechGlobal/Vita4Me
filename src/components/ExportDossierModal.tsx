@@ -44,7 +44,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
   if (!isOpen) return null;
 
   const memberName = activeMember?.name || profile?.full_name || 'Paciente';
-  const bloodType = activeMember?.blood_type || profile?.blood_type || 'O+';
+  const bloodType = activeMember?.blood_type || profile?.blood_type || 'Não informado';
   const allergies = activeMember?.allergies?.length ? activeMember.allergies : ['Nenhuma alergia relatada'];
 
   const handleDownloadPDF = async () => {

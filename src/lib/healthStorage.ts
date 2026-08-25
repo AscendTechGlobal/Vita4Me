@@ -1,21 +1,14 @@
 import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from '../types';
-import { 
-  INITIAL_EXAMS, 
-  INITIAL_INDICATORS, 
-  INITIAL_MEDICATIONS, 
-  INITIAL_RECORDS, 
-  INITIAL_FAMILY_MEMBERS, 
-  INITIAL_HABIT 
-} from '../data/initialHealthData';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 const KEYS = {
-  EXAMS: 'healthai_exams_v1',
-  INDICATORS: 'healthai_indicators_v1',
-  MEDICATIONS: 'healthai_medications_v1',
-  RECORDS: 'healthai_records_v1',
-  FAMILY: 'healthai_family_v1',
-  HABIT: 'healthai_habit_today_v1',
-  ACTIVE_MEMBER: 'healthai_active_member_id_v1',
+  EXAMS: 'vita4me_exams_v2',
+  INDICATORS: 'vita4me_indicators_v2',
+  MEDICATIONS: 'vita4me_medications_v2',
+  RECORDS: 'vita4me_records_v2',
+  FAMILY: 'vita4me_family_v2',
+  HABIT: 'vita4me_habit_today_v2',
+  ACTIVE_MEMBER: 'vita4me_active_member_id_v2',
 };
 
 function getStored<T>(key: string, fallback: T): T {
@@ -23,7 +16,7 @@ function getStored<T>(key: string, fallback: T): T {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch (err) {
-    console.error(`Error reading ${key}:`, err);
+    console.error(`Erro ao ler ${key}:`, err);
     return fallback;
   }
 }
@@ -32,13 +25,13 @@ function setStored<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (err) {
-    console.error(`Error saving ${key}:`, err);
+    console.error(`Erro ao salvar ${key}:`, err);
   }
 }
 
-// 1. EXAMS
+// 1. EXAMES (Retorna array vazio se não houver exames cadastrados)
 export function getExams(): LabExam[] {
-  return getStored<LabExam[]>(KEYS.EXAMS, INITIAL_EXAMS);
+  return getStored<LabExam[]>(KEYS.EXAMS, []);
 }
 
 export function saveExam(exam: LabExam): LabExam {
@@ -50,17 +43,50 @@ export function saveExam(exam: LabExam): LabExam {
     list.unshift(exam);
   }
   setStored(KEYS.EXAMS, list);
+
+  // Sync assíncrono com Supabase se configurado
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('lab_exams').upsert({
+          id: exam.id.startsWith('exam-') ? undefined : exam.id,
+          user_id: user.id,
+          title: exam.title,
+          category: exam.category,
+          exam_date: exam.exam_date,
+          laboratory: exam.laboratory,
+          doctor_name: exam.doctor_name,
+          ai_summary: exam.ai_summary,
+          ai_simple_translation: exam.ai_simple_translation,
+          ai_key_findings: exam.ai_key_findings,
+          status: exam.status,
+          updated_at: new Date().toISOString(),
+        }).then(({ error }) => {
+          if (error) console.error('Erro ao sincronizar exame com Supabase:', error);
+        });
+      }
+    });
+  }
+
   return exam;
 }
 
 export function deleteExam(id: string): void {
   const list = getExams().filter(e => e.id !== id);
   setStored(KEYS.EXAMS, list);
+
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('lab_exams').delete().eq('id', id).eq('user_id', user.id);
+      }
+    });
+  }
 }
 
-// 2. INDICATORS
+// 2. INDICADORES (Retorna array vazio se não houver indicadores)
 export function getIndicators(): HealthIndicator[] {
-  return getStored<HealthIndicator[]>(KEYS.INDICATORS, INITIAL_INDICATORS);
+  return getStored<HealthIndicator[]>(KEYS.INDICATORS, []);
 }
 
 export function saveIndicator(indicator: HealthIndicator): HealthIndicator {
@@ -72,17 +98,47 @@ export function saveIndicator(indicator: HealthIndicator): HealthIndicator {
     list.unshift(indicator);
   }
   setStored(KEYS.INDICATORS, list);
+
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('health_indicators').upsert({
+          id: indicator.id.startsWith('ind-') ? undefined : indicator.id,
+          user_id: user.id,
+          name: indicator.name,
+          category: indicator.category,
+          value: indicator.value,
+          unit: indicator.unit,
+          reference_min: indicator.reference_min,
+          reference_max: indicator.reference_max,
+          measured_at: indicator.measured_at,
+          status: indicator.status === 'normal' ? 'normal' : 'alerta',
+        }).then(({ error }) => {
+          if (error) console.error('Erro ao sincronizar indicador:', error);
+        });
+      }
+    });
+  }
+
   return indicator;
 }
 
 export function deleteIndicator(id: string): void {
   const list = getIndicators().filter(i => i.id !== id);
   setStored(KEYS.INDICATORS, list);
+
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('health_indicators').delete().eq('id', id).eq('user_id', user.id);
+      }
+    });
+  }
 }
 
-// 3. MEDICATIONS
+// 3. MEDICAMENTOS (Retorna array vazio por padrão)
 export function getMedications(): Medication[] {
-  return getStored<Medication[]>(KEYS.MEDICATIONS, INITIAL_MEDICATIONS);
+  return getStored<Medication[]>(KEYS.MEDICATIONS, []);
 }
 
 export function saveMedication(med: Medication): Medication {
@@ -94,17 +150,48 @@ export function saveMedication(med: Medication): Medication {
     list.unshift(med);
   }
   setStored(KEYS.MEDICATIONS, list);
+
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('medications').upsert({
+          id: med.id.startsWith('med-') ? undefined : med.id,
+          user_id: user.id,
+          name: med.name,
+          dosage: med.dosage,
+          frequency: med.frequency,
+          schedule_times: med.schedule_times,
+          instructions: med.instructions,
+          prescribed_by: med.prescribed_by,
+          is_continuous: med.is_continuous,
+          is_active: med.is_active,
+          updated_at: new Date().toISOString(),
+        }).then(({ error }) => {
+          if (error) console.error('Erro ao sincronizar medicamento:', error);
+        });
+      }
+    });
+  }
+
   return med;
 }
 
 export function deleteMedication(id: string): void {
   const list = getMedications().filter(m => m.id !== id);
   setStored(KEYS.MEDICATIONS, list);
+
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('medications').delete().eq('id', id).eq('user_id', user.id);
+      }
+    });
+  }
 }
 
-// 4. HEALTH RECORDS (TIMELINE)
+// 4. HISTÓRICO CLÍNICO / TIMELINE (Retorna array vazio por padrão)
 export function getHealthRecords(): HealthRecord[] {
-  return getStored<HealthRecord[]>(KEYS.RECORDS, INITIAL_RECORDS);
+  return getStored<HealthRecord[]>(KEYS.RECORDS, []);
 }
 
 export function saveHealthRecord(record: HealthRecord): HealthRecord {
@@ -116,17 +203,46 @@ export function saveHealthRecord(record: HealthRecord): HealthRecord {
     list.unshift(record);
   }
   setStored(KEYS.RECORDS, list);
+
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('health_records').upsert({
+          id: record.id.startsWith('rec-') ? undefined : record.id,
+          user_id: user.id,
+          record_type: record.record_type,
+          title: record.title,
+          description: record.description,
+          doctor_or_institution: record.doctor_or_institution,
+          event_date: record.event_date,
+          tags: record.tags,
+          updated_at: new Date().toISOString(),
+        }).then(({ error }) => {
+          if (error) console.error('Erro ao sincronizar registro clínico:', error);
+        });
+      }
+    });
+  }
+
   return record;
 }
 
 export function deleteHealthRecord(id: string): void {
   const list = getHealthRecords().filter(r => r.id !== id);
   setStored(KEYS.RECORDS, list);
+
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('health_records').delete().eq('id', id).eq('user_id', user.id);
+      }
+    });
+  }
 }
 
-// 5. FAMILY MEMBERS
+// 5. PERFIS FAMILIARES (Retorna array vazio por padrão)
 export function getFamilyMembers(): FamilyMember[] {
-  return getStored<FamilyMember[]>(KEYS.FAMILY, INITIAL_FAMILY_MEMBERS);
+  return getStored<FamilyMember[]>(KEYS.FAMILY, []);
 }
 
 export function saveFamilyMember(member: FamilyMember): FamilyMember {
@@ -138,12 +254,49 @@ export function saveFamilyMember(member: FamilyMember): FamilyMember {
     list.push(member);
   }
   setStored(KEYS.FAMILY, list);
+
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('family_members').upsert({
+          id: member.id.startsWith('fam-') ? undefined : member.id,
+          user_id: user.id,
+          name: member.name,
+          relationship: member.relationship,
+          date_of_birth: member.date_of_birth,
+          gender: member.gender,
+          blood_type: member.blood_type,
+          height_cm: member.height_cm,
+          weight_kg: member.weight_kg,
+          smoking_status: member.smoking_status,
+          alcohol_status: member.alcohol_status,
+          activity_level: member.activity_level,
+          chronic_conditions: member.chronic_conditions,
+          allergies: member.allergies,
+          is_active: member.is_active,
+          onboarding_completed: member.onboarding_completed,
+          updated_at: new Date().toISOString(),
+        }).then(({ error }) => {
+          if (error) console.error('Erro ao sincronizar membro familiar:', error);
+        });
+      }
+    });
+  }
+
   return member;
 }
 
 export function deleteFamilyMember(id: string): void {
   const list = getFamilyMembers().filter(f => f.id !== id);
   setStored(KEYS.FAMILY, list);
+
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('family_members').delete().eq('id', id).eq('user_id', user.id);
+      }
+    });
+  }
 }
 
 export function getActiveFamilyMemberId(): string {
@@ -154,21 +307,21 @@ export function setActiveFamilyMemberId(id: string): void {
   setStored(KEYS.ACTIVE_MEMBER, id);
 }
 
-// 6. DAILY HABIT
+// 6. ROTINA DIÁRIA (Valores zerados por padrão)
 export function getTodayHabit(): DailyHabit {
   const todayStr = new Date().toISOString().split('T')[0];
-  const habit = getStored<DailyHabit>(KEYS.HABIT, INITIAL_HABIT);
+  const emptyHabit: DailyHabit = {
+    user_id: 'usr-current',
+    log_date: todayStr,
+    water_ml: 0,
+    sleep_hours: 0,
+    exercise_minutes: 0,
+    mood: 'Neutro',
+  };
+  const habit = getStored<DailyHabit>(KEYS.HABIT, emptyHabit);
   if (habit.log_date !== todayStr) {
-    const newDay: DailyHabit = {
-      user_id: 'usr-default',
-      log_date: todayStr,
-      water_ml: 0,
-      sleep_hours: 0,
-      exercise_minutes: 0,
-      mood: 'Neutro',
-    };
-    setStored(KEYS.HABIT, newDay);
-    return newDay;
+    setStored(KEYS.HABIT, emptyHabit);
+    return emptyHabit;
   }
   return habit;
 }
@@ -177,5 +330,22 @@ export function saveDailyHabit(habit: Partial<DailyHabit>): DailyHabit {
   const current = getTodayHabit();
   const updated = { ...current, ...habit };
   setStored(KEYS.HABIT, updated);
+
+  if (isSupabaseConfigured) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('daily_habits').upsert({
+          user_id: user.id,
+          log_date: updated.log_date,
+          water_ml: updated.water_ml,
+          sleep_hours: updated.sleep_hours,
+          exercise_minutes: updated.exercise_minutes,
+          mood: updated.mood,
+          notes: updated.notes,
+        }, { onConflict: 'user_id,log_date' });
+      }
+    });
+  }
+
   return updated;
 }

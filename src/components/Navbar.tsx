@@ -48,25 +48,41 @@ export const Navbar: React.FC<NavbarProps> = ({
           <Menu className="w-5 h-5" />
         </button>
 
-        {/* Family Member Pill */}
-        <button
-          onClick={onOpenFamilyModal}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs text-slate-800 dark:text-white transition cursor-pointer group shadow-xs"
-          title="Alternar perfil familiar"
-        >
-          <div className="w-6 h-6 rounded-full bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 font-bold flex items-center justify-center text-[10px]">
-            {activeMember?.name?.charAt(0) || 'P'}
+        {/* Active Member / Profile Pill */}
+        {profile?.plan_tier === 'family' ? (
+          <button
+            onClick={onOpenFamilyModal}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs text-slate-800 dark:text-white transition cursor-pointer group shadow-xs"
+            title="Alternar perfil familiar"
+          >
+            <div className="w-6 h-6 rounded-full bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 font-bold flex items-center justify-center text-[10px]">
+              {activeMember?.name?.charAt(0) || profile?.full_name?.charAt(0) || 'P'}
+            </div>
+            <div className="text-left">
+              <span className="block font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition leading-tight">
+                {activeMember?.name || profile?.full_name || 'Perfil Titular'}
+              </span>
+              <span className="block text-[9px] text-slate-500 dark:text-slate-400">
+                {activeMember?.relationship || 'Titular'} &bull; Alternar
+              </span>
+            </div>
+            <Users className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 ml-1" />
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white shadow-xs">
+            <div className="w-6 h-6 rounded-full bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 font-bold flex items-center justify-center text-[10px]">
+              {profile?.full_name?.charAt(0) || user?.email?.charAt(0)?.toUpperCase() || 'T'}
+            </div>
+            <div className="text-left">
+              <span className="block font-bold text-slate-800 dark:text-slate-200 leading-tight">
+                {profile?.full_name || user?.email?.split('@')[0] || 'Titular'}
+              </span>
+              <span className="block text-[9px] text-slate-500 dark:text-slate-400 font-mono">
+                Prontuário Individual
+              </span>
+            </div>
           </div>
-          <div className="text-left">
-            <span className="block font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition leading-tight">
-              {activeMember?.name || 'Perfil Titular'}
-            </span>
-            <span className="block text-[9px] text-slate-500 dark:text-slate-400">
-              {activeMember?.relationship || 'Titular'} &bull; Alternar
-            </span>
-          </div>
-          <Users className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 ml-1" />
-        </button>
+        )}
       </div>
 
       {/* Right: Actions */}

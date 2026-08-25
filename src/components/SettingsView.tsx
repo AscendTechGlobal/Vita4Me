@@ -124,19 +124,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div>
               <span className="text-slate-500 dark:text-slate-400 block mb-1">Nome Completo:</span>
               <strong className="text-slate-900 dark:text-white text-sm block">
-                {profile?.full_name || user?.user_metadata?.full_name || 'Eduardo Weber'}
+                {profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Titular'}
               </strong>
             </div>
 
             <div>
               <span className="text-slate-500 dark:text-slate-400 block mb-1">E-mail Cadastrado:</span>
-              <span className="text-slate-700 dark:text-slate-300 font-mono">{user?.email || 'usuario@vita4me.app'}</span>
+              <span className="text-slate-700 dark:text-slate-300 font-mono">{user?.email || '—'}</span>
             </div>
 
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
                 <span className="text-[10px] text-slate-500 uppercase font-bold block">Tipo Sanguíneo</span>
-                <strong className="text-emerald-700 dark:text-emerald-400 font-mono text-sm">{profile?.blood_type || 'O+'}</strong>
+                <strong className="text-emerald-700 dark:text-emerald-400 font-mono text-sm">{profile?.blood_type || 'Não informado'}</strong>
               </div>
 
               <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">

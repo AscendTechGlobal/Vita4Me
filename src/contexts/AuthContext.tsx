@@ -15,6 +15,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<{ error: string | null }>;
   updateUserPassword: (password: string) => Promise<{ error: string | null }>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -43,6 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           plan_tier: 'individual',
           subscription_status: 'inactive',
           ai_credits: 0,
+          onboarding_completed: false,
         };
         const { data: created } = await supabase
           .from('profiles')
@@ -55,6 +57,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (err) {
       console.error('Erro ao carregar perfil:', err);
+    }
+  };
+
+  const refreshProfile = async () => {
+    if (user) {
+      await fetchProfile(user.id, user.email, user.user_metadata?.full_name);
     }
   };
 
@@ -196,6 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOut,
         resetPasswordForEmail,
         updateUserPassword,
+        refreshProfile,
       }}
     >
       {children}

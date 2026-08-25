@@ -45,7 +45,7 @@ import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, Daily
 import { trackEvent, trackPageView } from "./lib/analytics";
 
 const MainAppContent: React.FC = () => {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const [viewMode, setViewMode] = useState<"landing" | "app">("landing");
   const [currentTab, setCurrentTab] = useState<ActiveTab>("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -75,9 +75,9 @@ const MainAppContent: React.FC = () => {
   const [todayHabit, setTodayHabit] = useState<DailyHabit>({
     user_id: "usr-default",
     log_date: new Date().toISOString().split("T")[0],
-    water_ml: 1750,
-    sleep_hours: 7.5,
-    exercise_minutes: 45,
+    water_ml: 0,
+    sleep_hours: 0,
+    exercise_minutes: 0,
   });
 
   const refreshAllData = () => {
@@ -109,14 +109,18 @@ const MainAppContent: React.FC = () => {
     }
   }, []);
 
-  // Transição reativa de tela conforme o estado real de autenticação do Supabase
+  // Transição reativa de tela e disparo de Anamnese Inicial no primeiro acesso
   useEffect(() => {
     if (user) {
       setViewMode("app");
+      // Se a anamnese médica inicial ainda não foi concluída no Supabase, abrir modal automaticamente
+      if (profile && profile.onboarding_completed === false) {
+        setIsOnboardingModalOpen(true);
+      }
     } else {
       setViewMode("landing");
     }
-  }, [user]);
+  }, [user, profile]);
 
   const activeMember = familyMembers.find(f => f.id === activeMemberId) || familyMembers[0] || null;
 
@@ -325,9 +329,36 @@ const MainAppContent: React.FC = () => {
             onClose={() => setIsOnboardingModalOpen(false)}
             targetType="user"
             initialName={profile?.full_name || ""}
-            onSaveCompleted={(data) => {
+            onSaveCompleted={async (data) => {
+              if (isSupabaseConfigured && user) {
+                try {
+                  await supabase
+                    .from('profiles')
+                    .update({
+                      full_name: data.name,
+                      date_of_birth: data.birthDate,
+                      gender: data.gender,
+                      blood_type: data.bloodType,
+                      height_cm: data.height,
+                      weight_kg: data.weight,
+                      smoking_status: data.smoking,
+                      alcohol_status: data.alcohol,
+                      activity_level: data.activity,
+                      chronic_conditions: data.chronicConditions,
+                      allergies: data.allergies,
+                      emergency_contact_name: data.emergencyName,
+                      emergency_contact_phone: data.emergencyPhone,
+                      onboarding_completed: true,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', user.id);
+                } catch (err) {
+                  console.error("Erro ao salvar anamnese no Supabase:", err);
+                }
+              }
+              await refreshProfile();
               refreshAllData();
-              alert("Prontuário e anamnese inicial cadastrados com sucesso!");
+              setIsOnboardingModalOpen(false);
             }}
           />
         )}
