@@ -208,6 +208,35 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
     }
   };
 
+  const cleanupUnsavedUpload = async () => {
+    if (fileMetadata?.storagePath) {
+      try {
+        const headers = await getAuthHeaders();
+        fetch("/api/exams/cancel-upload", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ storagePath: fileMetadata.storagePath }),
+        }).catch(() => {});
+      } catch {}
+    }
+  };
+
+  const handleCancelOrClose = () => {
+    if (addMode === "review" && fileMetadata?.storagePath) {
+      cleanupUnsavedUpload();
+    }
+    resetForm();
+    setShowAddModal(false);
+  };
+
+  const handleBackToUpload = () => {
+    if (fileMetadata?.storagePath) {
+      cleanupUnsavedUpload();
+    }
+    setFileMetadata(null);
+    setAddMode("upload");
+  };
+
   const handleSaveConfirmedExam = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
@@ -240,8 +269,8 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
     resetForm();
   };
 
-  const handleViewOriginalFile = async (storagePath?: string) => {
-    if (!storagePath) return;
+  const handleViewOriginalFile = async (storagePath?: string, examId?: string) => {
+    if (!storagePath && !examId) return;
 
     setIsOpeningFile(true);
     try {
@@ -249,7 +278,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
       const res = await fetch("/api/exams/signed-url", {
         method: "POST",
         headers,
-        body: JSON.stringify({ storagePath }),
+        body: JSON.stringify({ storagePath, examId }),
       });
 
       if (!res.ok) {
@@ -494,7 +523,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
                     <span>Arquivo Original Criptografado Disponível</span>
                   </div>
                   <button
-                    onClick={() => handleViewOriginalFile(selectedExam.file_url)}
+                    onClick={() => handleViewOriginalFile(selectedExam.file_url, selectedExam.id)}
                     disabled={isOpeningFile}
                     className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                   >
@@ -556,7 +585,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
         <div 
           className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
           onClick={(e) => {
-            if (e.target === e.currentTarget && !isProcessingFile) setShowAddModal(false);
+            if (e.target === e.currentTarget && !isProcessingFile) handleCancelOrClose();
           }}
         >
           <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-6 md:p-8 space-y-5 animate-in fade-in zoom-in-95 max-h-[92vh] flex flex-col my-auto">
@@ -579,7 +608,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
                 </p>
               </div>
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={handleCancelOrClose}
                 disabled={isProcessingFile}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
               >
@@ -846,7 +875,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
                 <div className="flex justify-between items-center gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
                   <button
                     type="button"
-                    onClick={() => setAddMode("upload")}
+                    onClick={handleBackToUpload}
                     className="px-4 py-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white text-xs font-semibold cursor-pointer"
                   >
                     Voltar / Outro Arquivo
@@ -955,7 +984,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setShowAddModal(false)}
+                      onClick={handleCancelOrClose}
                       className="px-4 py-2 text-slate-400 hover:text-slate-900 dark:hover:text-white"
                     >
                       Cancelar
