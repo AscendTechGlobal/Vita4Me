@@ -1,11 +1,15 @@
-import React, { useState, useEffect, Suspense, lazy } from "react";
+import React, { Suspense, lazy } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useOutletContext } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { Navbar } from "./components/Navbar";
-import { Sidebar, ActiveTab } from "./components/Sidebar";
-import { LandingPageView } from "./components/LandingPageView";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AppLayout } from "./layouts/AppLayout";
+import { AuthPageView } from "./components/AuthPageView";
+import { ActiveTab } from "./components/Sidebar";
+import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from "./types";
 
-// Lazy-loaded Views (Code-Splitting for Top Performance)
+// Lazy-loaded Views
+const LandingPageView = lazy(() => import("./components/LandingPageView").then(m => ({ default: m.LandingPageView })));
 const DashboardView = lazy(() => import("./components/DashboardView").then(m => ({ default: m.DashboardView })));
 const ExamsCentralView = lazy(() => import("./components/ExamsCentralView").then(m => ({ default: m.ExamsCentralView })));
 const IndicatorsView = lazy(() => import("./components/IndicatorsView").then(m => ({ default: m.IndicatorsView })));
@@ -15,13 +19,7 @@ const HabitsView = lazy(() => import("./components/HabitsView").then(m => ({ def
 const HealthAIChatView = lazy(() => import("./components/HealthAIChatView").then(m => ({ default: m.HealthAIChatView })));
 const SettingsView = lazy(() => import("./components/SettingsView").then(m => ({ default: m.SettingsView })));
 const AuthConfirmView = lazy(() => import("./components/AuthConfirmView").then(m => ({ default: m.AuthConfirmView })));
-
-// Lazy-loaded Modals
 const BillingModal = lazy(() => import("./components/BillingModal").then(m => ({ default: m.BillingModal })));
-const AuthModal = lazy(() => import("./components/AuthModal").then(m => ({ default: m.AuthModal })));
-const ExportDossierModal = lazy(() => import("./components/ExportDossierModal").then(m => ({ default: m.ExportDossierModal })));
-const FamilyProfilesModal = lazy(() => import("./components/FamilyProfilesModal").then(m => ({ default: m.FamilyProfilesModal })));
-const HealthOnboardingModal = lazy(() => import("./components/HealthOnboardingModal").then(m => ({ default: m.HealthOnboardingModal })));
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center p-12 min-h-[300px]">
@@ -29,257 +27,161 @@ const LoadingSpinner = () => (
   </div>
 );
 
-import { 
-  getExams, 
-  getIndicators, 
-  getMedications, 
-  getHealthRecords, 
-  getFamilyMembers, 
-  getTodayHabit, 
-  getActiveFamilyMemberId, 
-  setActiveFamilyMemberId,
-  saveFamilyMember,
-  deleteFamilyMember
-} from "./lib/healthStorage";
-import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from "./types";
-import { trackEvent, trackPageView } from "./lib/analytics";
-import { supabase, isSupabaseConfigured } from "./lib/supabase";
+// Interface para o contexto do Outlet em AppLayout
+interface AppLayoutContext {
+  activeMember: FamilyMember | null;
+  exams: LabExam[];
+  indicators: HealthIndicator[];
+  medications: Medication[];
+  records: HealthRecord[];
+  todayHabit: DailyHabit;
+  refreshAllData: () => void;
+  onOpenExportDossierModal: () => void;
+  onOpenBillingModal: () => void;
+  onOpenOnboarding: () => void;
+}
 
-const MainAppContent: React.FC = () => {
-  const { user, profile, isLoading, refreshProfile } = useAuth();
-  const [viewMode, setViewMode] = useState<"landing" | "app">("landing");
-  const [currentTab, setCurrentTab] = useState<ActiveTab>("overview");
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isConfirmRoute, setIsConfirmRoute] = useState<boolean>(() => {
-    return (
-      window.location.pathname === "/auth/confirm" ||
-      window.location.pathname.startsWith("/auth/confirm") ||
-      window.location.hash.includes("type=signup") ||
-      window.location.hash.includes("type=email_confirmation")
-    );
-  });
+// ── ROTAS EMBUTIDAS EM /app ──
+const TAB_ROUTES: Record<ActiveTab, string> = {
+  overview: "/app",
+  exams: "/app/exames",
+  indicators: "/app/indicadores",
+  timeline: "/app/linha-do-tempo",
+  medications: "/app/medicamentos",
+  habits: "/app/rotina",
+  chat: "/app/assistente",
+  settings: "/app/configuracoes",
+};
 
-  // Modals state
-  const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [isExportDossierOpen, setIsExportDossierOpen] = useState(false);
-  const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false);
-  const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
+const DashboardRoute: React.FC = () => {
+  const ctx = useOutletContext<AppLayoutContext>();
+  const navigate = useNavigate();
+  return (
+    <DashboardView
+      activeMember={ctx.activeMember}
+      exams={ctx.exams}
+      indicators={ctx.indicators}
+      medications={ctx.medications}
+      records={ctx.records}
+      todayHabit={ctx.todayHabit}
+      onNavigate={(tab) => navigate(TAB_ROUTES[tab] || "/app")}
+      onOpenExportDossierModal={ctx.onOpenExportDossierModal}
+      onOpenOnboarding={ctx.onOpenOnboarding}
+    />
+  );
+};
 
-  // Data state
-  const [exams, setExams] = useState<LabExam[]>([]);
-  const [indicators, setIndicators] = useState<HealthIndicator[]>([]);
-  const [medications, setMedications] = useState<Medication[]>([]);
-  const [records, setRecords] = useState<HealthRecord[]>([]);
-  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
-  const [activeMemberId, setActiveMemberIdState] = useState<string>("fam-me");
-  const [todayHabit, setTodayHabit] = useState<DailyHabit>({
-    user_id: "usr-default",
-    log_date: new Date().toISOString().split("T")[0],
-    water_ml: 0,
-    sleep_hours: 0,
-    exercise_minutes: 0,
-  });
+const ExamsRoute: React.FC = () => {
+  const ctx = useOutletContext<AppLayoutContext>();
+  const navigate = useNavigate();
+  return (
+    <ExamsCentralView
+      exams={ctx.exams}
+      activeMember={ctx.activeMember}
+      onRefreshExams={ctx.refreshAllData}
+      onBack={() => navigate("/app")}
+    />
+  );
+};
 
-  const refreshAllData = () => {
-    setExams(getExams());
-    setIndicators(getIndicators());
-    setMedications(getMedications());
-    setRecords(getHealthRecords());
-    setFamilyMembers(getFamilyMembers());
-    setActiveMemberIdState(getActiveFamilyMemberId());
-    setTodayHabit(getTodayHabit());
-  };
+const IndicatorsRoute: React.FC = () => {
+  const ctx = useOutletContext<AppLayoutContext>();
+  const navigate = useNavigate();
+  return (
+    <IndicatorsView
+      indicators={ctx.indicators}
+      activeMember={ctx.activeMember}
+      onRefreshIndicators={ctx.refreshAllData}
+      onBack={() => navigate("/app")}
+    />
+  );
+};
 
-  useEffect(() => {
-    refreshAllData();
+const TimelineRoute: React.FC = () => {
+  const ctx = useOutletContext<AppLayoutContext>();
+  const navigate = useNavigate();
+  return (
+    <TimelineView
+      records={ctx.records}
+      activeMember={ctx.activeMember}
+      onRefreshRecords={ctx.refreshAllData}
+      onBack={() => navigate("/app")}
+    />
+  );
+};
 
-    // Detecção segura de retorno de Checkout com Sucesso
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('checkout_success') === 'true') {
-      const plan = (urlParams.get('plan') || 'individual') as 'individual' | 'family';
-      const alreadyTracked = sessionStorage.getItem('vita4me_checkout_tracked');
-      if (!alreadyTracked) {
-        sessionStorage.setItem('vita4me_checkout_tracked', 'true');
-        trackEvent('trial_started', { plan_tier: plan });
-        trackEvent('subscription_activated', { plan_tier: plan });
-      }
-      if (user) {
-        setViewMode('app');
-      }
-    }
-  }, []);
+const MedicationsRoute: React.FC = () => {
+  const ctx = useOutletContext<AppLayoutContext>();
+  const navigate = useNavigate();
+  return (
+    <MedicationsView
+      medications={ctx.medications}
+      activeMember={ctx.activeMember}
+      onRefreshMedications={ctx.refreshAllData}
+      onBack={() => navigate("/app")}
+    />
+  );
+};
 
-  // Transição reativa de tela e disparo de Anamnese Inicial estritamente quando profile estiver carregado
-  useEffect(() => {
-    if (isLoading) return; // Aguardar carregamento completo de auth e profile
+const HabitsRoute: React.FC = () => {
+  const ctx = useOutletContext<AppLayoutContext>();
+  const navigate = useNavigate();
+  return (
+    <HabitsView
+      todayHabit={ctx.todayHabit}
+      onRefreshHabit={ctx.refreshAllData}
+      onBack={() => navigate("/app")}
+    />
+  );
+};
 
-    if (user) {
-      setViewMode("app");
-      // Abrir anamnese SOMENTE se profile carregado e onboarding_completed for comprovadamente false
-      if (profile && profile.onboarding_completed === false) {
-        setIsOnboardingModalOpen(true);
-      }
-    } else {
-      setViewMode("landing");
-    }
-  }, [user, profile, isLoading]);
+const ChatRoute: React.FC = () => {
+  const ctx = useOutletContext<AppLayoutContext>();
+  const navigate = useNavigate();
+  return (
+    <HealthAIChatView
+      activeMember={ctx.activeMember}
+      exams={ctx.exams}
+      indicators={ctx.indicators}
+      medications={ctx.medications}
+      records={ctx.records}
+      onBack={() => navigate("/app")}
+    />
+  );
+};
 
-  const activeMember = familyMembers.find(f => f.id === activeMemberId) || familyMembers[0] || null;
+const SettingsRoute: React.FC = () => {
+  const ctx = useOutletContext<AppLayoutContext>();
+  const navigate = useNavigate();
+  return (
+    <SettingsView
+      onOpenBillingModal={ctx.onOpenBillingModal}
+      onOpenOnboarding={ctx.onOpenOnboarding}
+      onBack={() => navigate("/app")}
+    />
+  );
+};
 
-  const handleSelectFamilyMember = (id: string) => {
-    setActiveFamilyMemberId(id);
-    setActiveMemberIdState(id);
-    trackEvent('family_profile_switched', { is_family_context: true });
-  };
-
-  const handleNavigate = (tab: ActiveTab) => {
-    setCurrentTab(tab);
-    trackPageView('/app/' + tab, 'Vita4Me — ' + tab);
-    if (tab === 'overview') {
-      trackEvent('dashboard_viewed');
-    }
-  };
+// ── COMPONENTE DE WRAPPER DA LANDING PAGE COM SUPORTE A BILLING MODAL ──
+const LandingPageWrapper: React.FC = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [isBillingModalOpen, setIsBillingModalOpen] = React.useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-[#7AC943] selection:text-[#0A3B2E]">
-      {isConfirmRoute ? (
-        <Suspense fallback={<LoadingSpinner />}>
-          <AuthConfirmView
-            onGoToLogin={() => {
-              if (window.history && window.history.replaceState) {
-                window.history.replaceState({}, document.title, "/");
-              }
-              setIsConfirmRoute(false);
-              if (user) {
-                setViewMode("app");
-              } else {
-                setViewMode("landing");
-                setIsAuthModalOpen(true);
-              }
-            }}
-          />
-        </Suspense>
-      ) : viewMode === "landing" || !user ? (
-        <LandingPageView
-          onEnterApp={() => {
-            if (user) {
-              setViewMode("app");
-            } else {
-              setIsAuthModalOpen(true);
-            }
-          }}
-          onOpenAuthModal={() => setIsAuthModalOpen(true)}
-          onOpenBillingModal={() => setIsBillingModalOpen(true)}
-        />
-      ) : (
-        <>
-          <Navbar
-            onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-            activeMember={activeMember}
-            onOpenFamilyModal={() => setIsFamilyModalOpen(true)}
-            onOpenBillingModal={() => setIsBillingModalOpen(true)}
-            onOpenAuthModal={() => setIsAuthModalOpen(true)}
-            onOpenExportDossierModal={() => setIsExportDossierOpen(true)}
-            onToggleLandingPage={() => setViewMode("landing")}
-          />
+    <>
+      <LandingPageView
+        onEnterApp={() => {
+          if (user) {
+            navigate("/app");
+          } else {
+            navigate("/login");
+          }
+        }}
+        onOpenAuthModal={() => navigate("/login")}
+        onOpenBillingModal={() => setIsBillingModalOpen(true)}
+      />
 
-          <div className="flex-1 flex overflow-hidden">
-            <Sidebar
-              currentTab={currentTab}
-              onNavigate={handleNavigate}
-              isOpenMobile={isMobileMenuOpen}
-              onCloseMobile={() => setIsMobileMenuOpen(false)}
-              onOpenBillingModal={() => setIsBillingModalOpen(true)}
-              examsCount={exams.length}
-              medicationsCount={medications.filter(m => m.is_active).length}
-            />
-
-        <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-950">
-          <Suspense fallback={<LoadingSpinner />}>
-            {currentTab === "overview" && (
-              <DashboardView
-                activeMember={activeMember}
-                exams={exams}
-                indicators={indicators}
-                medications={medications}
-                records={records}
-                todayHabit={todayHabit}
-                onNavigate={handleNavigate}
-                onOpenExportDossierModal={() => setIsExportDossierOpen(true)}
-                onOpenOnboarding={() => setIsOnboardingModalOpen(true)}
-              />
-            )}
-
-            {currentTab === "exams" && (
-              <ExamsCentralView
-                exams={exams}
-                activeMember={activeMember}
-                onRefreshExams={refreshAllData}
-                onBack={() => handleNavigate("overview")}
-              />
-            )}
-
-            {currentTab === "indicators" && (
-              <IndicatorsView
-                indicators={indicators}
-                activeMember={activeMember}
-                onRefreshIndicators={refreshAllData}
-                onBack={() => handleNavigate("overview")}
-              />
-            )}
-
-            {currentTab === "timeline" && (
-              <TimelineView
-                records={records}
-                activeMember={activeMember}
-                onRefreshRecords={refreshAllData}
-                onBack={() => handleNavigate("overview")}
-              />
-            )}
-
-            {currentTab === "medications" && (
-              <MedicationsView
-                medications={medications}
-                activeMember={activeMember}
-                onRefreshMedications={refreshAllData}
-                onBack={() => handleNavigate("overview")}
-              />
-            )}
-
-            {currentTab === "habits" && (
-              <HabitsView
-                todayHabit={todayHabit}
-                onRefreshHabit={refreshAllData}
-                onBack={() => handleNavigate("overview")}
-              />
-            )}
-
-            {currentTab === "chat" && (
-              <HealthAIChatView
-                activeMember={activeMember}
-                exams={exams}
-                indicators={indicators}
-                medications={medications}
-                records={records}
-                onBack={() => handleNavigate("overview")}
-              />
-            )}
-
-            {currentTab === "settings" && (
-              <SettingsView
-                onOpenBillingModal={() => setIsBillingModalOpen(true)}
-                onOpenOnboarding={() => setIsOnboardingModalOpen(true)}
-                onBack={() => handleNavigate("overview")}
-              />
-            )}
-          </Suspense>
-        </main>
-      </div>
-      </>
-      )}
-
-      {/* Global Modals in Suspense */}
       <Suspense fallback={null}>
         {isBillingModalOpen && (
           <BillingModal
@@ -287,233 +189,54 @@ const MainAppContent: React.FC = () => {
             onClose={() => setIsBillingModalOpen(false)}
           />
         )}
-
-        {isAuthModalOpen && (
-          <AuthModal
-            isOpen={isAuthModalOpen}
-            onClose={() => setIsAuthModalOpen(false)}
-          />
-        )}
-
-        {isExportDossierOpen && (
-          <ExportDossierModal
-            isOpen={isExportDossierOpen}
-            onClose={() => setIsExportDossierOpen(false)}
-            profile={profile}
-            activeMember={activeMember}
-            exams={exams}
-            indicators={indicators}
-            medications={medications}
-            records={records}
-          />
-        )}
-
-        {isFamilyModalOpen && (
-          <FamilyProfilesModal
-            isOpen={isFamilyModalOpen}
-            onClose={() => setIsFamilyModalOpen(false)}
-            members={familyMembers}
-            activeMemberId={activeMemberId}
-            onSelectMember={handleSelectFamilyMember}
-            onAddMember={(newM) => {
-              saveFamilyMember(newM);
-              refreshAllData();
-            }}
-            onDeleteMember={(id) => {
-              deleteFamilyMember(id);
-              refreshAllData();
-            }}
-          />
-        )}
-
-        {isOnboardingModalOpen && (
-          <HealthOnboardingModal
-            isOpen={isOnboardingModalOpen}
-            onClose={() => setIsOnboardingModalOpen(false)}
-            targetType="user"
-            initialName={profile?.full_name || ""}
-            initialProfile={profile}
-            onSaveCompleted={async (data) => {
-              if (!user || !user.id) {
-                return { success: false, error: "Sessão de usuário não encontrada. Faça login novamente." };
-              }
-
-              if (!isSupabaseConfigured) {
-                return { success: false, error: "Conexão com o servidor não configurada." };
-              }
-
-              // ── A) WHITELIST: Somente colunas que existem em public.profiles ──
-              const validBirthDate = data.birthDate && /^\d{4}-\d{2}-\d{2}$/.test(data.birthDate)
-                ? data.birthDate
-                : null;
-              const validHeight = Number(data.height) > 0 ? Number(data.height) : null;
-              const validWeight = Number(data.weight) > 0 ? Number(data.weight) : null;
-
-              const profilePayload: Record<string, unknown> = {
-                full_name: data.name?.trim() || null,
-                date_of_birth: validBirthDate,
-                gender: data.gender?.trim() || null,
-                blood_type: data.bloodType?.trim() || null,
-                height_cm: validHeight,
-                weight_kg: validWeight,
-                smoking_status: data.smoking?.trim() || null,
-                alcohol_status: data.alcohol?.trim() || null,
-                activity_level: data.activity?.trim() || null,
-                chronic_conditions: Array.isArray(data.chronicConditions)
-                  ? data.chronicConditions.map((c: string) => c.trim()).filter((c: string) => c && c !== "Nenhuma condição crônica")
-                  : [],
-                allergies: Array.isArray(data.allergies)
-                  ? data.allergies.map((a: string) => a.trim()).filter(Boolean)
-                  : [],
-                emergency_contact_name: data.emergencyName?.trim() || null,
-                emergency_contact_phone: data.emergencyPhone?.trim() || null,
-                onboarding_completed: true,
-                updated_at: new Date().toISOString(),
-              };
-
-              // ── B) UPDATE profiles (sem .select() encadeado) ──
-              const { error: updateError } = await supabase
-                .from('profiles')
-                .update(profilePayload)
-                .eq('id', user.id);
-
-              if (updateError) {
-                console.error("[ONBOARDING][profiles.update]", {
-                  code: updateError.code,
-                  message: updateError.message,
-                  details: updateError.details,
-                  hint: updateError.hint,
-                });
-                return {
-                  success: false,
-                  error: `Erro ao salvar perfil [${updateError.code || 'UNKNOWN'}]: ${updateError.message || 'Erro desconhecido'}`,
-                };
-              }
-
-              // ── C) SELECT separado para confirmar persistência ──
-              const { data: verifyRow, error: verifyError } = await supabase
-                .from('profiles')
-                .select('onboarding_completed')
-                .eq('id', user.id)
-                .maybeSingle();
-
-              if (verifyError) {
-                console.error("[ONBOARDING][profiles.verify]", {
-                  code: verifyError.code,
-                  message: verifyError.message,
-                  details: verifyError.details,
-                  hint: verifyError.hint,
-                });
-                return {
-                  success: false,
-                  error: `Erro ao verificar perfil [${verifyError.code || 'UNKNOWN'}]: ${verifyError.message || 'Erro desconhecido'}`,
-                };
-              }
-
-              if (!verifyRow || verifyRow.onboarding_completed !== true) {
-                console.error("[ONBOARDING][profiles.verify] onboarding_completed não é true após UPDATE");
-                return {
-                  success: false,
-                  error: "O perfil foi salvo mas onboarding_completed não foi confirmado. Tente novamente.",
-                };
-              }
-
-              // ── D) DADOS OPCIONAIS — falha aqui NÃO impede conclusão ──
-
-              // D.1) Indicador de Peso
-              if (validWeight) {
-                const { error: indError } = await supabase
-                  .from('health_indicators')
-                  .insert({
-                    user_id: user.id,
-                    name: 'Peso',
-                    category: 'Vital',
-                    value: validWeight,
-                    unit: 'kg',
-                    measured_at: new Date().toISOString(),
-                    status: 'normal',
-                  });
-                if (indError) {
-                  console.error("[ONBOARDING][health_indicators.insert]", {
-                    code: indError.code,
-                    message: indError.message,
-                    details: indError.details,
-                    hint: indError.hint,
-                  });
-                }
-              }
-
-              // D.2) Medicamentos (apenas com nome real preenchido)
-              if (Array.isArray(data.medications)) {
-                for (const med of data.medications) {
-                  if (med?.name?.trim()) {
-                    const { error: medError } = await supabase
-                      .from('medications')
-                      .insert({
-                        user_id: user.id,
-                        name: med.name.trim(),
-                        dosage: med.dosage?.trim() || '1 dose',
-                        frequency: med.frequency?.trim() || '1x ao dia',
-                        schedule_times: med.schedule ? [med.schedule] : ['08:00'],
-                        is_continuous: true,
-                        is_active: true,
-                      });
-                    if (medError) {
-                      console.error("[ONBOARDING][medications.insert]", {
-                        code: medError.code,
-                        message: medError.message,
-                        details: medError.details,
-                        hint: medError.hint,
-                      });
-                    }
-                  }
-                }
-              }
-
-              // D.3) Alergias como health_records (apenas com texto real)
-              if (Array.isArray(data.allergies)) {
-                for (const al of data.allergies) {
-                  if (al?.trim()) {
-                    const { error: recError } = await supabase
-                      .from('health_records')
-                      .insert({
-                        user_id: user.id,
-                        record_type: 'alergia',
-                        title: `Alergia: ${al.trim()}`,
-                        description: 'Declarada na anamnese médica inicial.',
-                        event_date: new Date().toISOString().split('T')[0],
-                        tags: ['Alergia', 'Anamnese'],
-                      });
-                    if (recError) {
-                      console.error("[ONBOARDING][health_records.insert]", {
-                        code: recError.code,
-                        message: recError.message,
-                        details: recError.details,
-                        hint: recError.hint,
-                      });
-                    }
-                  }
-                }
-              }
-
-              // ── E) REFRESH e FECHAMENTO ──
-              await refreshProfile();
-              refreshAllData();
-              setIsOnboardingModalOpen(false);
-              return { success: true };
-            }}
-          />
-        )}
       </Suspense>
-    </div>
+    </>
   );
+};
+
+// ── COMPONENTE DE CONFIRMAÇÃO DE AUTH ──
+const AuthConfirmWrapper: React.FC = () => {
+  const navigate = useNavigate();
+  return <AuthConfirmView onGoToLogin={() => navigate("/login")} />;
 };
 
 export function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <MainAppContent />
+        <BrowserRouter>
+          <Suspense fallback={<LoadingSpinner />}>
+            <Routes>
+              {/* ── ROTAS PÚBLICAS ── */}
+              <Route path="/" element={<LandingPageWrapper />} />
+              <Route path="/login" element={<AuthPageView initialTab="login" />} />
+              <Route path="/cadastro" element={<AuthPageView initialTab="signup" />} />
+              <Route path="/auth/confirm" element={<AuthConfirmWrapper />} />
+
+              {/* ── ROTAS PROTEGIDAS /app/* ── */}
+              <Route
+                path="/app"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<DashboardRoute />} />
+                <Route path="exames" element={<ExamsRoute />} />
+                <Route path="indicadores" element={<IndicatorsRoute />} />
+                <Route path="linha-do-tempo" element={<TimelineRoute />} />
+                <Route path="medicamentos" element={<MedicationsRoute />} />
+                <Route path="rotina" element={<HabitsRoute />} />
+                <Route path="assistente" element={<ChatRoute />} />
+                <Route path="configuracoes" element={<SettingsRoute />} />
+              </Route>
+
+              {/* ── FALLBACK ── */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>
   );

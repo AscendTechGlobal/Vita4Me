@@ -1,6 +1,6 @@
 import React from "react";
+import { useLocation, useNavigate, Link } from "react-router-dom";
 import {
-  Heart,
   LayoutDashboard,
   FileText,
   Activity,
@@ -13,7 +13,6 @@ import {
   Crown,
   X
 } from "lucide-react";
-import { Logo } from "./Logo";
 
 export type ActiveTab =
   | "overview"
@@ -25,9 +24,16 @@ export type ActiveTab =
   | "chat"
   | "settings";
 
+export interface NavItemConfig {
+  id: ActiveTab;
+  label: string;
+  path: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: number;
+  isNew?: boolean;
+}
+
 interface SidebarProps {
-  currentTab: ActiveTab;
-  onNavigate: (tab: ActiveTab) => void;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
   onOpenBillingModal: () => void;
@@ -36,24 +42,32 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  currentTab,
-  onNavigate,
   isOpenMobile,
   onCloseMobile,
   onOpenBillingModal,
   examsCount,
   medicationsCount,
 }) => {
-  const navItems = [
-    { id: "overview" as ActiveTab, label: "Visão Geral 360°", icon: LayoutDashboard },
-    { id: "exams" as ActiveTab, label: "Central de Exames (IA)", icon: FileText, badge: examsCount },
-    { id: "indicators" as ActiveTab, label: "Painel de Indicadores", icon: Activity },
-    { id: "timeline" as ActiveTab, label: "Linha do Tempo Médica", icon: Calendar },
-    { id: "medications" as ActiveTab, label: "Medicamentos & Lembretes", icon: Pill, badge: medicationsCount },
-    { id: "habits" as ActiveTab, label: "Rotina & Bem-estar", icon: Droplet },
-    { id: "chat" as ActiveTab, label: "Assistente IA Vita4Me", icon: MessageSquare, isNew: true },
-    { id: "settings" as ActiveTab, label: "Configurações & Conta", icon: Settings },
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const navItems: NavItemConfig[] = [
+    { id: "overview", label: "Visão Geral 360°", path: "/app", icon: LayoutDashboard },
+    { id: "exams", label: "Central de Exames (IA)", path: "/app/exames", icon: FileText, badge: examsCount },
+    { id: "indicators", label: "Painel de Indicadores", path: "/app/indicadores", icon: Activity },
+    { id: "timeline", label: "Linha do Tempo Médica", path: "/app/linha-do-tempo", icon: Calendar },
+    { id: "medications", label: "Medicamentos & Lembretes", path: "/app/medicamentos", icon: Pill, badge: medicationsCount },
+    { id: "habits", label: "Rotina & Bem-estar", path: "/app/rotina", icon: Droplet },
+    { id: "chat", label: "Assistente IA Vita4Me", path: "/app/assistente", icon: MessageSquare, isNew: true },
+    { id: "settings", label: "Configurações & Conta", path: "/app/configuracoes", icon: Settings },
   ];
+
+  const isItemActive = (item: NavItemConfig) => {
+    if (item.id === "overview") {
+      return location.pathname === "/app" || location.pathname === "/app/";
+    }
+    return location.pathname.startsWith(item.path);
+  };
 
   return (
     <>
@@ -73,11 +87,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Brand Header */}
         <div>
           <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-2.5 overflow-hidden">
+            <Link to="/app" className="flex items-center gap-2.5 overflow-hidden group">
               <img
                 src="/logo-icon-transparent.png"
                 alt="Vita4Me Logo"
-                className="h-8 w-auto object-contain flex-shrink-0"
+                className="h-8 w-auto object-contain flex-shrink-0 group-hover:scale-105 transition-transform"
               />
               <div className="flex flex-col">
                 <span className="text-base font-black tracking-tight text-slate-900 dark:text-white flex items-center leading-none">
@@ -87,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   Prontuário Digital & IA
                 </span>
               </div>
-            </div>
+            </Link>
 
             <button
               onClick={onCloseMobile}
@@ -101,22 +115,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <nav className="p-3 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = currentTab === item.id;
+              const active = isItemActive(item);
               return (
-                <button
+                <Link
                   key={item.id}
+                  to={item.path}
                   onClick={() => {
-                    onNavigate(item.id);
                     onCloseMobile();
                   }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                    isActive
+                    active
                       ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 shadow-xs font-bold"
                       : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 ${isActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}`} />
+                    <Icon className={`w-4 h-4 ${active ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}`} />
                     <span>{item.label}</span>
                   </div>
 
@@ -131,7 +145,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       IA
                     </span>
                   )}
-                </button>
+                </Link>
               );
             })}
           </nav>
