@@ -26,6 +26,7 @@ import { HEALTH_PRICING_PLANS } from "../lib/stripe";
 import { PricingPlan } from "../types";
 import { trackEvent, trackPageView } from "../lib/analytics";
 import { LegalDocumentsModal, LegalTab } from "./LegalDocumentsModal";
+import { useAuth } from "../contexts/AuthContext";
 
 interface LandingPageViewProps {
   onEnterApp: () => void;
@@ -38,6 +39,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   onOpenAuthModal,
   onOpenBillingModal,
 }) => {
+  const { user } = useAuth();
   const [billingInterval, setBillingInterval] = useState<"monthly" | "yearly">("monthly");
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -135,12 +137,21 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         <span className="inline-flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-[#7AC943]" />
           <span><strong>Vita4Me 2.0:</strong> Tradução instantânea de exames laboratoriais e prontuário integrado disponível com 7 dias grátis.</span>
-          <button 
-            onClick={onOpenBillingModal}
-            className="underline text-white hover:text-[#7AC943] font-bold ml-1 cursor-pointer transition"
-          >
-            Começar 7 Dias Grátis &rarr;
-          </button>
+          {user ? (
+            <button 
+              onClick={onEnterApp}
+              className="underline text-[#7AC943] hover:text-white font-bold ml-1 cursor-pointer transition"
+            >
+              Acessar Meu Prontuário &rarr;
+            </button>
+          ) : (
+            <button 
+              onClick={onOpenBillingModal}
+              className="underline text-white hover:text-[#7AC943] font-bold ml-1 cursor-pointer transition"
+            >
+              Começar 7 Dias Grátis &rarr;
+            </button>
+          )}
         </span>
       </div>
 
@@ -181,19 +192,39 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center gap-3">
-            <button
-              onClick={onOpenAuthModal}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-white hover:text-[#7AC943] hover:bg-white/5 transition cursor-pointer"
-            >
-              Entrar
-            </button>
-            <button
-              onClick={onOpenBillingModal}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#126D4A] to-[#7AC943] hover:from-[#126D4A] hover:to-[#96DC63] text-[#0A3B2E] font-black text-xs shadow-lg shadow-[#7AC943]/20 transition-all hover:scale-[1.03] cursor-pointer flex items-center gap-1.5"
-            >
-              <span>Testar 7 Dias Grátis</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            {user ? (
+              <>
+                <button
+                  onClick={onEnterApp}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#0A3B2E] bg-[#7AC943] hover:bg-[#96DC63] transition-all hover:scale-105 shadow-md shadow-[#7AC943]/20 cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>Meu Prontuário</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={onOpenBillingModal}
+                  className="hidden sm:flex px-4 py-2 rounded-xl text-xs font-semibold text-[#CDEBC5] hover:text-white hover:bg-white/5 border border-[#126D4A] transition cursor-pointer"
+                >
+                  Planos
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={onOpenAuthModal}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white hover:text-[#7AC943] hover:bg-white/5 transition cursor-pointer"
+                >
+                  Entrar
+                </button>
+                <button
+                  onClick={onOpenBillingModal}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#126D4A] to-[#7AC943] hover:from-[#126D4A] hover:to-[#96DC63] text-[#0A3B2E] font-black text-xs shadow-lg shadow-[#7AC943]/20 transition-all hover:scale-[1.03] cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>Testar 7 Dias Grátis</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -232,21 +263,41 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
-            <button
-              onClick={onOpenBillingModal}
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-[#7AC943] to-[#96DC63] hover:from-[#96DC63] hover:to-[#7AC943] text-[#0A3B2E] font-black text-sm shadow-xl shadow-[#7AC943]/25 transition-all hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
-            >
-              <span>Começar Teste de 7 Dias Grátis</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {user ? (
+              <>
+                <button
+                  onClick={onEnterApp}
+                  className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-[#7AC943] to-[#96DC63] hover:from-[#96DC63] hover:to-[#7AC943] text-[#0A3B2E] font-black text-sm shadow-xl shadow-[#7AC943]/25 transition-all hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Ir para Meu Prontuário</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={onOpenBillingModal}
+                  className="w-full sm:w-auto px-7 py-4 rounded-2xl bg-[#0A3B2E] hover:bg-[#126D4A]/60 border border-[#126D4A] hover:border-[#7AC943]/60 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Ver Planos & Assinaturas</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={onOpenBillingModal}
+                  className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-[#7AC943] to-[#96DC63] hover:from-[#96DC63] hover:to-[#7AC943] text-[#0A3B2E] font-black text-sm shadow-xl shadow-[#7AC943]/25 transition-all hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Começar Teste de 7 Dias Grátis</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
 
-            <button
-              onClick={onOpenAuthModal}
-              className="w-full sm:w-auto px-7 py-4 rounded-2xl bg-[#0A3B2E] hover:bg-[#126D4A]/60 border border-[#126D4A] hover:border-[#7AC943]/60 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <Lock className="w-4 h-4 text-[#7AC943]" />
-              <span>Acessar Prontuário</span>
-            </button>
+                <button
+                  onClick={onOpenAuthModal}
+                  className="w-full sm:w-auto px-7 py-4 rounded-2xl bg-[#0A3B2E] hover:bg-[#126D4A]/60 border border-[#126D4A] hover:border-[#7AC943]/60 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Lock className="w-4 h-4 text-[#7AC943]" />
+                  <span>Acessar Prontuário</span>
+                </button>
+              </>
+            )}
           </div>
 
           {/* Trust Indicators */}
@@ -700,16 +751,26 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             Experimente todos os recursos por 7 dias gratuitamente e faça a tradução do seu primeiro exame.
           </p>
           <div className="pt-2">
-            <button
-              onClick={onOpenBillingModal}
-              className="px-10 py-4 rounded-2xl bg-[#7AC943] hover:bg-[#96DC63] text-[#0A3B2E] font-black text-sm shadow-2xl shadow-[#7AC943]/30 transition-all hover:scale-105 cursor-pointer inline-flex items-center gap-2"
-            >
-              <span>Iniciar 7 Dias de Teste Grátis</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {user ? (
+              <button
+                onClick={onEnterApp}
+                className="px-10 py-4 rounded-2xl bg-[#7AC943] hover:bg-[#96DC63] text-[#0A3B2E] font-black text-sm shadow-2xl shadow-[#7AC943]/30 transition-all hover:scale-105 cursor-pointer inline-flex items-center gap-2"
+              >
+                <span>Acessar Meu Prontuário Agora</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={onOpenBillingModal}
+                className="px-10 py-4 rounded-2xl bg-[#7AC943] hover:bg-[#96DC63] text-[#0A3B2E] font-black text-sm shadow-2xl shadow-[#7AC943]/30 transition-all hover:scale-105 cursor-pointer inline-flex items-center gap-2"
+              >
+                <span>Iniciar 7 Dias de Teste Grátis</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
           </div>
           <p className="text-[11px] text-[#CDEBC5]/70">
-            Cancele a qualquer momento durante os 7 dias sem cobrança.
+            {user ? "Acesso ilimitado ao seu prontuário e assistente de saúde." : "Cancele a qualquer momento durante os 7 dias sem cobrança."}
           </p>
         </div>
       </section>
@@ -752,12 +813,21 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             >
               Cookies
             </button>
-            <button 
-              onClick={onOpenAuthModal} 
-              className="hover:text-white font-semibold text-[#7AC943] transition cursor-pointer"
-            >
-              Acessar Prontuário &rarr;
-            </button>
+            {user ? (
+              <button 
+                onClick={onEnterApp} 
+                className="hover:text-white font-bold text-[#7AC943] transition cursor-pointer"
+              >
+                Meu Prontuário &rarr;
+              </button>
+            ) : (
+              <button 
+                onClick={onOpenAuthModal} 
+                className="hover:text-white font-semibold text-[#7AC943] transition cursor-pointer"
+              >
+                Acessar Prontuário &rarr;
+              </button>
+            )}
           </div>
         </div>
       </footer>
