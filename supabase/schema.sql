@@ -51,10 +51,14 @@ create policy "Users can update their own profile"
 -- Garante que plan_tier, subscription_status, stripe_customer_id, stripe_subscription_id e ai_credits
 -- sejam imutáveis por requisições originadas do cliente authenticated / anon
 create or replace function public.protect_profile_financial_fields()
-returns trigger as $$
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
 begin
   -- Se a mutação vier do contexto de usuário autenticado comum (cliente)
-  if pg_catalog.current_user in ('authenticated', 'anon') or (auth.jwt() ->> 'role') = 'authenticated' then
+  if current_user in ('authenticated', 'anon') or (auth.jwt() ->> 'role') = 'authenticated' then
     if (new.plan_tier is distinct from old.plan_tier) or
        (new.subscription_status is distinct from old.subscription_status) or
        (new.stripe_customer_id is distinct from old.stripe_customer_id) or
@@ -65,7 +69,7 @@ begin
   end if;
   return new;
 end;
-$$ language plpgsql security definer set search_path = '';
+$$;
 
 drop trigger if exists tr_protect_profile_financial on public.profiles;
 create trigger tr_protect_profile_financial
