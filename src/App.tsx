@@ -145,6 +145,7 @@ const ChatRoute: React.FC = () => {
       indicators={ctx.indicators}
       medications={ctx.medications}
       records={ctx.records}
+      onOpenBillingModal={ctx.onOpenBillingModal}
       onBack={() => navigate("/app")}
     />
   );

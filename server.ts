@@ -1013,55 +1013,184 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
 
 /**
  * ENDPOINT 2: ASSISTENTE CONVERSACIONAL VITA4ME
- * Protegido com validação JWT, autorização server-side e isolamento horizontal de dados
+ * Protegido com validação JWT, autorização server-side, tolerância a contexto parcial e isolamento horizontal de dados
  */
 app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { message, patientContext } = req.body;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Usuário não autenticado." });
+    }
+
+    const { message, familyMemberId } = req.body;
 
     if (!message || typeof message !== "string" || message.trim().length === 0) {
       return res.status(400).json({ error: "A mensagem é obrigatória." });
     }
 
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: "Serviço de prontuário indisponível no momento." });
+    }
+
+    // 1. Busca segura e paralela dos dados médicos no Supabase com Promise.allSettled (Tolerância a Contexto Parcial)
+    // Se familyMemberId for fornecido, valida se pertence a req.user.id para impedir IDOR
+    let validatedFamilyMemberId: string | null = null;
+    let targetPatientName = "Paciente";
+
+    if (familyMemberId && typeof familyMemberId === "string") {
+      const { data: member } = await supabaseAdmin
+        .from("family_members")
+        .select("id, name, relationship, blood_type, allergies, chronic_conditions")
+        .eq("id", familyMemberId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (member) {
+        validatedFamilyMemberId = member.id;
+        targetPatientName = member.name || "Familiar";
+      }
+    }
+
+    const [
+      profileResult,
+      examsResult,
+      indicatorsResult,
+      medicationsResult,
+      recordsResult,
+      habitsResult,
+    ] = await Promise.allSettled([
+      // Profile / Anamnese
+      supabaseAdmin
+        .from("profiles")
+        .select("full_name, date_of_birth, gender, blood_type, height_cm, weight_kg, smoking_status, alcohol_status, activity_level, chronic_conditions, allergies")
+        .eq("id", userId)
+        .maybeSingle(),
+
+      // Exames com Biomarcadores Estruturados (Upload-First & Manuais)
+      (validatedFamilyMemberId
+        ? supabaseAdmin.from("lab_exams").select("title, category, exam_date, laboratory, doctor_name, ai_summary, ai_simple_translation, ai_key_findings").eq("user_id", userId).eq("family_member_id", validatedFamilyMemberId).order("exam_date", { ascending: false }).limit(10)
+        : supabaseAdmin.from("lab_exams").select("title, category, exam_date, laboratory, doctor_name, ai_summary, ai_simple_translation, ai_key_findings").eq("user_id", userId).order("exam_date", { ascending: false }).limit(10)
+      ),
+
+      // Indicadores de Saúde
+      (validatedFamilyMemberId
+        ? supabaseAdmin.from("health_indicators").select("name, category, value, unit, reference_min, reference_max, status, measured_at").eq("user_id", userId).eq("family_member_id", validatedFamilyMemberId).order("measured_at", { ascending: false }).limit(20)
+        : supabaseAdmin.from("health_indicators").select("name, category, value, unit, reference_min, reference_max, status, measured_at").eq("user_id", userId).order("measured_at", { ascending: false }).limit(20)
+      ),
+
+      // Medicamentos em Uso
+      (validatedFamilyMemberId
+        ? supabaseAdmin.from("medications").select("name, dosage, frequency, schedule_times, is_continuous, notes").eq("user_id", userId).eq("family_member_id", validatedFamilyMemberId).eq("is_active", true).order("created_at", { ascending: false }).limit(15)
+        : supabaseAdmin.from("medications").select("name, dosage, frequency, schedule_times, is_continuous, notes").eq("user_id", userId).eq("is_active", true).order("created_at", { ascending: false }).limit(15)
+      ),
+
+      // Linha do Tempo / Histórico
+      (validatedFamilyMemberId
+        ? supabaseAdmin.from("health_records").select("record_type, title, description, doctor_or_institution, event_date, tags").eq("user_id", userId).eq("family_member_id", validatedFamilyMemberId).order("event_date", { ascending: false }).limit(15)
+        : supabaseAdmin.from("health_records").select("record_type, title, description, doctor_or_institution, event_date, tags").eq("user_id", userId).order("event_date", { ascending: false }).limit(15)
+      ),
+
+      // Hábitos Recentes
+      supabaseAdmin
+        .from("daily_habits")
+        .select("log_date, water_ml, sleep_hours, exercise_minutes, mood, notes")
+        .eq("user_id", userId)
+        .order("log_date", { ascending: false })
+        .limit(5),
+    ]);
+
+    // Extração segura dos dados com tolerância a falhas
+    const profile = profileResult.status === "fulfilled" && profileResult.value?.data ? profileResult.value.data : null;
+    const exams = examsResult.status === "fulfilled" && Array.isArray(examsResult.value?.data) ? examsResult.value.data : [];
+    const indicators = indicatorsResult.status === "fulfilled" && Array.isArray(indicatorsResult.value?.data) ? indicatorsResult.value.data : [];
+    const medications = medicationsResult.status === "fulfilled" && Array.isArray(medicationsResult.value?.data) ? medicationsResult.value.data : [];
+    const records = recordsResult.status === "fulfilled" && Array.isArray(recordsResult.value?.data) ? recordsResult.value.data : [];
+    const habits = habitsResult.status === "fulfilled" && Array.isArray(habitsResult.value?.data) ? habitsResult.value.data : [];
+
+    const patientName = targetPatientName !== "Paciente" ? targetPatientName : (profile?.full_name || "Paciente");
+
+    // Formatação amigável dos exames com biomarcadores estruturados (ai_key_findings)
+    const formattedExams = exams.length > 0
+      ? exams.map((e: any) => {
+          let findingsSummary = "";
+          if (Array.isArray(e.ai_key_findings) && e.ai_key_findings.length > 0) {
+            const markers = e.ai_key_findings.map((f: any) => `${f.parameter}: ${f.value} (${f.status || 'normal'}${f.reference_interval ? `, Ref: ${f.reference_interval}` : ''})`).join("; ");
+            findingsSummary = ` | Marcadores: [${markers}]`;
+          }
+          return `• ${e.title} (${e.exam_date || 'Data não informada'}${e.laboratory ? ` - ${e.laboratory}` : ''}): ${e.ai_summary || e.ai_simple_translation || 'Sem resumo'}${findingsSummary}`;
+        }).join("\n")
+      : "Nenhum exame cadastrado no prontuário.";
+
+    const formattedMeds = medications.length > 0
+      ? medications.map((m: any) => `• ${m.name} (${m.dosage || 'Dose padrão'} - ${m.frequency || 'Horário diário'}${m.is_continuous ? ' - Uso contínuo' : ''}${m.notes ? ` - Obs: ${m.notes}` : ''})`).join("\n")
+      : "Nenhum medicamento de uso contínuo registrado.";
+
+    const formattedIndicators = indicators.length > 0
+      ? indicators.map((i: any) => `• ${i.name}: ${i.value} ${i.unit || ''} (Status: ${i.status || 'normal'}, Medido em: ${i.measured_at || 'recente'})`).join("\n")
+      : "Nenhum indicador de saúde recente registrado.";
+
+    const formattedRecords = records.length > 0
+      ? records.map((r: any) => `• [${r.record_type?.toUpperCase() || 'EVENTO'}] ${r.title} (${r.event_date || 'Data não informada'}${r.doctor_or_institution ? ` - ${r.doctor_or_institution}` : ''}): ${r.description || ''}`).join("\n")
+      : "Nenhum evento clínico recente registrado.";
+
+    const formattedHabits = habits.length > 0
+      ? habits.map((h: any) => `• Data ${h.log_date}: Água: ${h.water_ml}ml, Sono: ${h.sleep_hours}h, Exercício: ${h.exercise_minutes}min, Humor: ${h.mood || 'Não informado'}`).join("\n")
+      : "Sem registros recentes de hábitos.";
+
     const ai = getGeminiClient();
 
     if (!ai) {
       return res.json({
-        reply: `Olá! No momento estou em modo offline. O Vita4Me é uma ferramenta de organização de saúde e letramento médico e não substitui uma consulta presencial. Como posso ajudar com a organização das suas informações hoje?`,
+        reply: `Olá, ${patientName}! No momento estou em modo offline. Seus dados estão salvos e organizados com segurança. Como posso ajudar com a navegação do seu prontuário hoje?`,
       });
     }
 
-    const prompt = `Você é o Assistente de Saúde Inteligente da Vita4Me.
-Você tem acesso ao histórico médico autorizado do paciente abaixo:
+    const prompt = `Você é o Assistente Clínico Conversacional e Especialista em Letramento em Saúde da Vita4Me.
+Sua missão é responder às dúvidas de saúde do paciente com acolhimento, clareza, empatia e rigor científico, sempre utilizando como base o prontuário eletrônico autorizado do paciente.
 
-Contexto do Paciente:
-- Nome: ${patientContext?.name || "Paciente"}
-- Tipo Sanguíneo: ${patientContext?.bloodType || "Não informado"}
-- Alergias Registradas: ${JSON.stringify(patientContext?.allergies || [])}
-- Medicamentos em Uso: ${JSON.stringify(patientContext?.medications || [])}
-- Últimos Exames Registrados: ${JSON.stringify(patientContext?.recentExams || [])}
-- Indicadores Clínicos Recentes: ${JSON.stringify(patientContext?.indicators || [])}
+DADOS CONTEXTUAIS DO PACIENTE (CONSULTADOS EM TEMPO REAL NO BANCO DE DADOS):
+- Nome do Paciente: ${patientName}
+- Sexo / Gênero: ${profile?.gender || 'Não informado'}
+- Tipo Sanguíneo: ${profile?.blood_type || 'Não informado'}
+- Condições Crônicas: ${Array.isArray(profile?.chronic_conditions) && profile.chronic_conditions.length > 0 ? profile.chronic_conditions.join(", ") : 'Nenhuma condição crônica informada'}
+- Alergias Declaradas: ${Array.isArray(profile?.allergies) && profile.allergies.length > 0 ? profile.allergies.join(", ") : 'Nenhuma alergia declarada'}
 
-Mensagem do Paciente:
+HISTÓRICO DE EXAMES LABORATORIAIS E LAUDOS:
+${formattedExams}
+
+MEDICAMENTOS ATIVOS EM USO:
+${formattedMeds}
+
+INDICADORES E BIOMARCADORES MONITORADOS:
+${formattedIndicators}
+
+LINHA DO TEMPO MÉDICA (CONSULTAS, VACINAS, PROCEDIMENTOS):
+${formattedRecords}
+
+ROTINA E HÁBITOS DE BEM-ESTAR RECENTES:
+${formattedHabits}
+
+MENSAGEM DO PACIENTE:
 "${message.slice(0, 2000)}"
 
-DIRETRIZES CLÍNICAS E LIMITES DE SEGURANÇA MANDATÓRIOS:
-1. Responda de forma acolhedora, clara e objetiva com base nos dados do histórico do paciente.
-2. LIMITES DA IA: Você é uma ferramenta de apoio, organização e letramento. Você NÃO É UM MÉDICO e NÃO PODE prescrever diagnósticos clínicos, remédios ou alterar tratamentos vigentes.
-3. Se o paciente relatar sintomas agudos de emergência (dor no peito com irradiação, falta de ar severa, desmaio, sinais de AVC, etc.), oriente-o IMEDIATAMENTE a procurar um pronto-socorro.
-4. Sempre reforce que qualquer conduta médica deve ser validada com o profissional de saúde.`;
+DIRETRIZES CLÍNICAS E LIMITES ÉTICOS MANDATÓRIOS (NÃO NEGOCIÁVEIS):
+1. Use as informações acima para responder de forma personalizada. Se o paciente perguntar sobre exames ou taxas (ex: colesterol, glicemia, hemograma), cite os valores, datas e conclusões registradas no prontuário. Se houver exames de diferentes datas, faça a comparação histórica.
+2. LIMITES DA IA: Você é uma ferramenta de letramento e organização. NUNCA dê diagnósticos definitivos, NUNCA prescreva medicamentos e NUNCA oriente alterar ou suspender remédios por conta própria.
+3. Se o paciente relatar sintomas de emergência médica (dor súbita no peito, falta de ar severa, desmaio, sinais de AVC, convulsão), oriente IMEDIATAMENTE a procurar um pronto-socorro ou acionar o SAMU (192).
+4. Se uma categoria do prontuário estiver vazia (ex: sem exames cadastrados), informe com gentileza que ainda não há registros dessa categoria e sugira que o paciente envie o documento para enriquecer o histórico.
+5. Responda em português brasileiro fluente, claro e acolhedor, formatando com tópicos quando conveniente.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
-        temperature: 0.3,
+        temperature: 0.25,
       },
     });
 
-    return res.json({ reply: response.text || "Como posso ajudar na organização da sua saúde hoje?" });
+    return res.json({ reply: response.text || "Como posso ajudar com a organização da sua saúde hoje?" });
   } catch (error: any) {
-    console.error("Erro no chat Vita4Me:", error);
+    console.error("Erro no chat Vita4Me:", error?.message || "Erro desconhecido");
     res.status(500).json({ error: "Erro ao processar mensagem do assistente." });
   }
 });
