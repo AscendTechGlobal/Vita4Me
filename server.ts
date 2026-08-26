@@ -75,6 +75,28 @@ const getGeminiClient = () => {
   });
 };
 
+/**
+ * Utilitário com retry automático para tolerância a picos temporários na API do Gemini (ex: status 503 / 429)
+ */
+async function generateGeminiContentWithRetry(ai: GoogleGenAI, params: any, maxRetries = 2) {
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (err: any) {
+      lastError = err;
+      const isTransient = err?.status === 503 || err?.status === 429 || err?.message?.includes("high demand") || err?.message?.includes("UNAVAILABLE");
+      if (isTransient && attempt < maxRetries) {
+        console.warn(`[GEMINI][RETRY] Spike temporário detectado (status=${err?.status}). Aguardando 1.5s antes da tentativa ${attempt + 1}...`);
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
 // ==============================================================================
 // 4. HTTP SECURITY HEADERS & CORS HARDENING
 // ==============================================================================
@@ -681,22 +703,61 @@ function detectRealMimeType(buffer: Buffer): string | null {
 }
 
 /**
+ * Extrator e normalizador resiliente de JSON para respostas do Gemini
+ */
+function extractJsonFromText(rawText: string): any {
+  if (!rawText || typeof rawText !== "string") return null;
+  const clean = rawText.trim();
+  
+  // 1. Tentar parse direto
+  try {
+    return JSON.parse(clean);
+  } catch {}
+
+  // 2. Extrair bloco markdown ```json ... ``` ou ``` ... ```
+  const codeBlockMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch && codeBlockMatch[1]) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch {}
+  }
+
+  // 3. Extrair primeiro objeto JSON balanceado { ... }
+  const firstBrace = clean.indexOf("{");
+  const lastBrace = clean.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(clean.slice(firstBrace, lastBrace + 1));
+    } catch {}
+  }
+
+  return null;
+}
+
+/**
  * ENDPOINT 1.1: PROCESSADOR & EXTRATOR MULTIMODAL DE LAUDOS E EXAMES COM IA
  * Upload-first: Suporta PDF, JPG, JPEG, PNG, WebP
  * Validação rigorosa de magic bytes, armazenamento em bucket privado Supabase Storage e extração estruturada via Gemini 2.5 Flash
  */
 app.post("/api/ai/analyze-exam-document", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
+  const requestId = crypto.randomUUID();
+  const startTime = Date.now();
+  let currentStage = "INIT";
+  let storagePath: string | null = null;
+
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: "Usuário não autenticado." });
+      return res.status(401).json({ success: false, code: "AUTH_FAILED", message: "Usuário não autenticado.", requestId });
     }
+    currentStage = "AUTH_OK";
 
     const { base64Data, fileName, category } = req.body;
 
     if (!base64Data || typeof base64Data !== "string") {
-      return res.status(400).json({ error: "Arquivo não enviado ou formato inválido." });
+      return res.status(400).json({ success: false, code: "FILE_MISSING", message: "Arquivo não enviado ou formato inválido.", requestId });
     }
+    currentStage = "FILE_RECEIVED";
 
     // Remover header de data URI se presente (ex: data:application/pdf;base64,...)
     const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, "");
@@ -705,16 +766,21 @@ app.post("/api/ai/analyze-exam-document", requireAuth, requireAiAccess, async (r
     // Limite máximo de 15MB
     const MAX_FILE_SIZE = 15 * 1024 * 1024;
     if (buffer.length > MAX_FILE_SIZE) {
-      return res.status(400).json({ error: "O arquivo excede o limite máximo permitido de 15 MB." });
+      return res.status(413).json({ success: false, code: "FILE_TOO_LARGE", message: "O arquivo excede o limite máximo permitido de 15 MB.", requestId });
     }
+    currentStage = "SIZE_OK";
 
     // Validação estrita de Magic Bytes no Backend (Zero confiança em extensão/MIME do cliente)
     const detectedMimeType = detectRealMimeType(buffer);
     if (!detectedMimeType) {
-      return res.status(400).json({
-        error: "Formato de arquivo não suportado ou corrompido. Envie um arquivo PDF, JPG, PNG ou WebP válido.",
+      return res.status(415).json({
+        success: false,
+        code: "INVALID_MIME",
+        message: "Formato de arquivo não suportado ou corrompido. Envie um arquivo PDF, JPG, PNG ou WebP válido.",
+        requestId,
       });
     }
+    currentStage = "MIME_OK";
 
     // Sanitização rigorosa do nome do arquivo para prevenção de Path Traversal
     const rawName = typeof fileName === "string" ? fileName : "exame";
@@ -727,7 +793,7 @@ app.post("/api/ai/analyze-exam-document", requireAuth, requireAiAccess, async (r
     
     // Caminho isolado por usuário: {user_id}/exams/{uuid}_{filename}
     const fileId = crypto.randomUUID();
-    const storagePath = `${userId}/exams/${fileId}_${finalFileName}`;
+    storagePath = `${userId}/exams/${fileId}_${finalFileName}`;
 
     // Upload seguro para o Supabase Storage (bucket privado medical-documents)
     if (supabaseAdmin) {
@@ -739,34 +805,23 @@ app.post("/api/ai/analyze-exam-document", requireAuth, requireAiAccess, async (r
         });
 
       if (uploadError) {
-        console.error("Erro ao salvar arquivo no Supabase Storage:", uploadError.message);
+        console.error(`[ANALYZE_EXAM][STAGE:STORAGE_UPLOAD] requestId=${requestId} code=${uploadError.name} msg=${uploadError.message}`);
+      } else {
+        currentStage = "STORAGE_UPLOAD_OK";
       }
     }
 
     const ai = getGeminiClient();
-
     if (!ai) {
-      return res.json({
-        success: true,
-        extractedData: {
-          title: "Exame Médico Digitalizado",
-          category: category || "Laboratorial",
-          exam_date: new Date().toISOString().split("T")[0],
-          laboratory: "Não identificado",
-          doctor_name: "Não identificado",
-          raw_text: "Documento médico processado com sucesso. Parâmetros clínicos em conformidade.",
-          ai_summary: "Exame cadastrado e armazenado com segurança no prontuário.",
-          ai_simple_translation: "O documento foi anexado ao seu prontuário digital com criptografia. Para obter a tradução detalhada dos biomarcadores por IA, verifique a chave de IA do servidor.",
-          ai_key_findings: [],
-        },
-        fileMetadata: {
-          storagePath,
-          fileName: finalFileName,
-          fileSize: buffer.length,
-          mimeType: detectedMimeType,
-        },
+      return res.status(503).json({
+        success: false,
+        code: "GEMINI_NOT_CONFIGURED",
+        message: "Serviço de Inteligência Artificial temporariamente indisponível. Verifique as credenciais do servidor.",
+        requestId,
       });
     }
+
+    currentStage = "GEMINI_REQUEST_START";
 
     const prompt = `Você é o Especialista em Processamento de Documentos Médicos e Letramento em Saúde da Vita4Me.
 Sua tarefa é analisar rigorosamente este arquivo de exame médico (PDF ou Imagem) e extrair os dados clínicos com máxima precisão e segurança.
@@ -804,9 +859,9 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
   ]
 }`;
 
-    let parsed: any = {};
+    let parsed: any = null;
     try {
-      const response = await ai.models.generateContent({
+      const response = await generateGeminiContentWithRetry(ai, {
         model: "gemini-2.5-flash",
         contents: [
           {
@@ -825,18 +880,34 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
         },
       });
 
-      const text = response.text || "{}";
-      parsed = JSON.parse(text);
+      currentStage = "GEMINI_REQUEST_OK";
+      const rawResponseText = response.text || "";
+      parsed = extractJsonFromText(rawResponseText);
+      if (!parsed) {
+        throw new Error("GEMINI_INVALID_RESPONSE_JSON");
+      }
+      currentStage = "GEMINI_PARSE_OK";
     } catch (aiErr: any) {
-      // Rollback de segurança: se a extração de IA falhar completamente, remove o arquivo do Storage para evitar acúmulo de arquivos órfãos
-      if (supabaseAdmin) {
+      // Rollback seguro de Storage se a IA falhar
+      if (storagePath && supabaseAdmin) {
         await supabaseAdmin.storage.from("medical-documents").remove([storagePath]);
       }
-      throw aiErr;
+      console.error(`[ANALYZE_EXAM][STAGE:${currentStage}] requestId=${requestId} code=${aiErr?.status || aiErr?.code || 'GEMINI_ERROR'} msg=${aiErr?.message || 'Erro na chamada Gemini'}`);
+      return res.status(502).json({
+        success: false,
+        code: "GEMINI_REQUEST_FAILED",
+        message: "Não foi possível analisar o arquivo com Inteligência Artificial. Verifique se o documento está legível ou cadastre manualmente.",
+        requestId,
+        stage: currentStage,
+      });
     }
+
+    const durationMs = Date.now() - startTime;
+    console.log(`[ANALYZE_EXAM][SUCCESS] requestId=${requestId} stage=RESPONSE_OK duration_ms=${durationMs} markers_count=${parsed.ai_key_findings?.length || 0}`);
 
     return res.json({
       success: true,
+      requestId,
       extractedData: {
         title: parsed.title || "Exame Médico",
         category: parsed.category || category || "Laboratorial",
@@ -855,8 +926,19 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
       },
     });
   } catch (error: any) {
-    console.error("Erro no processamento do documento de exame:", error?.message || "Erro desconhecido");
-    return res.status(500).json({ error: "Falha ao processar e extrair dados do exame. Tente novamente ou cadastre manualmente." });
+    // Rollback de segurança se qualquer outra etapa falhar
+    if (storagePath && supabaseAdmin) {
+      await supabaseAdmin.storage.from("medical-documents").remove([storagePath]);
+    }
+    const durationMs = Date.now() - startTime;
+    console.error(`[ANALYZE_EXAM][STAGE:${currentStage}][FAILED] requestId=${requestId} duration_ms=${durationMs} err=${error?.message}`);
+    return res.status(500).json({
+      success: false,
+      code: "INTERNAL_ERROR",
+      message: "Falha interna ao processar o exame. Tente novamente ou cadastre manualmente.",
+      requestId,
+      stage: currentStage,
+    });
   }
 });
 
@@ -865,53 +947,61 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
  * Validação rigorosa de titularidade: consulta lab_exams e confirma que o registro pertence a req.user.id
  */
 app.post("/api/exams/signed-url", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const requestId = crypto.randomUUID();
   try {
     const userId = req.user?.id;
     const { storagePath, examId } = req.body;
 
     if (!userId || (!storagePath && !examId)) {
-      return res.status(400).json({ error: "Parâmetros inválidos." });
+      return res.status(400).json({ success: false, code: "INVALID_PARAMETERS", message: "Parâmetros inválidos.", requestId });
     }
 
     if (!supabaseAdmin) {
-      return res.status(503).json({ error: "Serviço de banco indisponível." });
+      return res.status(503).json({ success: false, code: "SERVICE_UNAVAILABLE", message: "Serviço de storage indisponível.", requestId });
     }
 
-    let targetPath = storagePath;
+    let targetPath: string | null = null;
 
-    // Se examId fornecido, busca no banco o storage_path oficial vinculado ao usuário autenticado
-    if (examId) {
-      const { data: exam, error: examError } = await supabaseAdmin
-        .from("lab_exams")
-        .select("file_url, user_id")
-        .eq("id", examId)
-        .eq("user_id", userId)
-        .maybeSingle();
+    // Se storagePath válido fornecido e pertencente ao usuário, usa diretamente
+    if (typeof storagePath === "string" && storagePath.startsWith(`${userId}/`)) {
+      targetPath = storagePath;
+    } else if (examId && typeof examId === "string") {
+      // Se for UUID válido do Supabase, consulta o banco
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(examId);
+      if (isUuid) {
+        const { data: exam, error: examError } = await supabaseAdmin
+          .from("lab_exams")
+          .select("file_url, user_id")
+          .eq("id", examId)
+          .eq("user_id", userId)
+          .maybeSingle();
 
-      if (examError || !exam || !exam.file_url) {
-        return res.status(404).json({ error: "Exame não encontrado ou acesso não autorizado." });
-      }
-      targetPath = exam.file_url;
-    } else if (storagePath) {
-      // Validação estrita de isolamento horizontal: o path deve obrigatoriamente iniciar com userId
-      if (!storagePath.startsWith(`${userId}/`)) {
-        return res.status(403).json({ error: "Acesso negado: Você não possui autorização para acessar este arquivo." });
+        if (!examError && exam?.file_url && exam.file_url.startsWith(`${userId}/`)) {
+          targetPath = exam.file_url;
+        }
       }
     }
 
-    // Gera URL assinada de curta duração (15 minutos = 900 segundos)
+    if (!targetPath) {
+      return res.status(403).json({ success: false, code: "ACCESS_DENIED", message: "Acesso não autorizado ou arquivo não encontrado.", requestId });
+    }
+
+    // Normaliza targetPath: caso contenha o prefixo do bucket por engano, remove
+    const cleanStoragePath = targetPath.replace(/^medical-documents\//, "");
+
     const { data, error } = await supabaseAdmin.storage
       .from("medical-documents")
-      .createSignedUrl(targetPath, 900);
+      .createSignedUrl(cleanStoragePath, 900);
 
     if (error || !data?.signedUrl) {
-      return res.status(500).json({ error: "Não foi possível gerar o link seguro do arquivo." });
+      console.error(`[SIGNED_URL][FAILED] requestId=${requestId} path=${cleanStoragePath} err=${error?.message}`);
+      return res.status(500).json({ success: false, code: "STORAGE_SIGNED_URL_FAILED", message: "Não foi possível gerar o link seguro do arquivo.", requestId });
     }
 
-    return res.json({ signedUrl: data.signedUrl });
+    return res.json({ success: true, signedUrl: data.signedUrl, requestId });
   } catch (err: any) {
-    console.error("Erro ao gerar signed URL:", err?.message || "Erro desconhecido");
-    return res.status(500).json({ error: "Falha na recuperação segura do arquivo." });
+    console.error(`[SIGNED_URL][ERROR] requestId=${requestId} err=${err?.message}`);
+    return res.status(500).json({ success: false, code: "INTERNAL_ERROR", message: "Falha na recuperação segura do arquivo.", requestId });
   }
 });
 
@@ -1180,7 +1270,7 @@ DIRETRIZES CLÍNICAS E LIMITES ÉTICOS MANDATÓRIOS (NÃO NEGOCIÁVEIS):
 4. Se uma categoria do prontuário estiver vazia (ex: sem exames cadastrados), informe com gentileza que ainda não há registros dessa categoria e sugira que o paciente envie o documento para enriquecer o histórico.
 5. Responda em português brasileiro fluente, claro e acolhedor, formatando com tópicos quando conveniente.`;
 
-    const response = await ai.models.generateContent({
+    const response = await generateGeminiContentWithRetry(ai, {
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
@@ -1233,13 +1323,13 @@ Responda em formato JSON rigoroso:
   "warningFlags": ["Aviso de alergia ou marcador relevante, se houver"]
 }`;
 
-    const response = await ai.models.generateContent({
+    const response = await generateGeminiContentWithRetry(ai, {
       model: "gemini-2.5-flash",
       contents: prompt,
       config: { responseMimeType: "application/json", temperature: 0.2 },
     });
 
-    const parsed = JSON.parse(response.text || "{}");
+    const parsed = extractJsonFromText(response.text || "{}") || {};
     return res.json({ success: true, result: parsed });
   } catch (err: any) {
     console.error("Erro no prep-consultation:", err);

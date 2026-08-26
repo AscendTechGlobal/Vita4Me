@@ -165,13 +165,16 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
 
       if (!response.ok) {
         const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.error || "Falha ao processar o exame no servidor.");
+        const detailedMsg = errJson.message || errJson.error || "Falha ao processar o exame no servidor.";
+        const codePrefix = errJson.code ? `[${errJson.code}] ` : "";
+        const refId = errJson.requestId ? ` (Ref: ${errJson.requestId.slice(0, 8)})` : "";
+        throw new Error(`${codePrefix}${detailedMsg}${refId}`);
       }
 
       const data = await response.json();
       const extracted = data.extractedData || {};
 
-      // Preencher formulário de revisão
+      // Preencher formulário de revisão com os biomarcadores e metadados extraídos
       setTitle(extracted.title || file.name.replace(/\.[^/.]+$/, ""));
       setCategory(extracted.category || "Laboratorial");
       setExamDate(extracted.exam_date || new Date().toISOString().split('T')[0]);
@@ -282,7 +285,8 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
       });
 
       if (!res.ok) {
-        throw new Error("Não foi possível gerar o link seguro do arquivo.");
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || errJson.error || "Não foi possível gerar o link seguro do arquivo.");
       }
 
       const { signedUrl } = await res.json();
