@@ -43,6 +43,7 @@ import {
 } from "./lib/healthStorage";
 import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from "./types";
 import { trackEvent, trackPageView } from "./lib/analytics";
+import { supabase, isSupabaseConfigured } from "./lib/supabase";
 
 const MainAppContent: React.FC = () => {
   const { user, profile, isLoading, refreshProfile } = useAuth();
