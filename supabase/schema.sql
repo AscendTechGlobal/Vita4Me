@@ -26,10 +26,12 @@ create table if not exists public.profiles (
   emergency_contact_name text,
   emergency_contact_phone text,
   plan_tier text not null default 'individual' check (plan_tier in ('free', 'individual', 'family')),
-  subscription_status text not null default 'inactive' check (subscription_status in ('active', 'inactive', 'past_due', 'canceled', 'trialing')),
+  subscription_status text not null default 'trialing' check (subscription_status in ('active', 'inactive', 'past_due', 'canceled', 'trialing')),
+  trial_started_at timestamptz default now(),
+  trial_ends_at timestamptz default (now() + interval '7 days'),
   stripe_customer_id text,
   stripe_subscription_id text,
-  ai_credits integer not null default 0,
+  ai_credits integer not null default 500,
   onboarding_completed boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -48,7 +50,7 @@ create policy "Users can update their own profile"
   with check (auth.uid() = id);
 
 -- Column Level Security & Trigger: Bloquear Auto-Elevação de Plano e Fraude de Faturamento
--- Garante que plan_tier, subscription_status, stripe_customer_id, stripe_subscription_id e ai_credits
+-- Garante que plan_tier, subscription_status, stripe_customer_id, stripe_subscription_id, ai_credits, trial_started_at e trial_ends_at
 -- sejam imutáveis por requisições originadas do cliente authenticated / anon
 create or replace function public.protect_profile_financial_fields()
 returns trigger
@@ -63,8 +65,10 @@ begin
        (new.subscription_status is distinct from old.subscription_status) or
        (new.stripe_customer_id is distinct from old.stripe_customer_id) or
        (new.stripe_subscription_id is distinct from old.stripe_subscription_id) or
-       (new.ai_credits is distinct from old.ai_credits) then
-      raise exception 'Acesso Negado: Alterações de plano, faturamento e créditos são restritas ao backend autorizado (service_role).';
+       (new.ai_credits is distinct from old.ai_credits) or
+       (new.trial_started_at is distinct from old.trial_started_at) or
+       (new.trial_ends_at is distinct from old.trial_ends_at) then
+      raise exception 'Acesso Negado: Alterações de plano, faturamento e período de teste são restritas ao backend autorizado (service_role).';
     end if;
   end if;
   return new;
@@ -98,7 +102,7 @@ grant update (
 ) on public.profiles to authenticated;
 grant all on public.profiles to service_role;
 
--- Trigger: Create Profile automatically on SignUp (Inicialmente Inativo até confirmação do Stripe)
+-- Trigger: Create Profile automatically on SignUp (7 dias de teste grátis com plano individual)
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -123,6 +127,8 @@ begin
     full_name,
     plan_tier,
     subscription_status,
+    trial_started_at,
+    trial_ends_at,
     ai_credits,
     onboarding_completed,
     created_at,
@@ -133,8 +139,10 @@ begin
     v_email,
     v_full_name,
     'individual',
-    'inactive',
-    0,
+    'trialing',
+    now(),
+    now() + interval '7 days',
+    500,
     false,
     now(),
     now()

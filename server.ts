@@ -543,7 +543,7 @@ const requireAiAccess = async (req: AuthenticatedRequest, res: Response, next: N
   try {
     const { data: profile, error } = await supabaseAdmin
       .from("profiles")
-      .select("plan_tier, subscription_status")
+      .select("plan_tier, subscription_status, trial_started_at, trial_ends_at, stripe_subscription_id, created_at")
       .eq("id", userId)
       .single();
 
@@ -555,18 +555,51 @@ const requireAiAccess = async (req: AuthenticatedRequest, res: Response, next: N
     }
 
     const isValidTier = profile.plan_tier === "individual" || profile.plan_tier === "family";
-    const isValidStatus = profile.subscription_status === "trialing" || profile.subscription_status === "active";
-
-    if (!isValidTier || !isValidStatus) {
+    if (!isValidTier) {
       return res.status(402).json({
-        error: "Os recursos de Inteligência Artificial estão incluídos nos planos pagos do Vita4Me (com 7 dias de teste grátis). Assine ou reative sua assinatura para continuar.",
-        code: "PAYMENT_REQUIRED",
-        plan_tier: profile.plan_tier,
-        subscription_status: profile.subscription_status,
+        error: "Os recursos de IA exigem um plano Individual ou Família.",
+        code: "PLAN_UPGRADE_REQUIRED",
       });
     }
 
-    next();
+    const now = new Date();
+
+    // 1. Assinatura Paga Ativa no Stripe
+    if (profile.subscription_status === "active") {
+      return next();
+    }
+
+    // 2. Período de Teste Grátis (Trial de 7 dias)
+    // Calcula o término do trial a partir de trial_ends_at ou created_at + 7 dias
+    const trialEndDate = profile.trial_ends_at 
+      ? new Date(profile.trial_ends_at)
+      : new Date(new Date(profile.created_at || now).getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const isWithinTrialPeriod = now <= trialEndDate;
+
+    // Usuário em status 'trialing' ou usuário novo em 'inactive' sem assinatura prévia dentro dos 7 dias
+    if ((profile.subscription_status === "trialing" || (profile.subscription_status === "inactive" && !profile.stripe_subscription_id)) && isWithinTrialPeriod) {
+      return next();
+    }
+
+    // Trial expirado: Atualiza para inactive no banco se ainda estiver como trialing
+    if (profile.subscription_status === "trialing" && !isWithinTrialPeriod) {
+      await supabaseAdmin
+        .from("profiles")
+        .update({ subscription_status: "inactive", updated_at: now.toISOString() })
+        .eq("id", userId);
+    }
+
+    // 3. Status Inativo, Expirado ou Cancelado
+    return res.status(402).json({
+      error: isWithinTrialPeriod
+        ? "Assinatura inativa. Reative seu plano para acessar os recursos de IA."
+        : "Seu período de teste grátis de 7 dias expirou. Assine um plano Vita4Me para continuar utilizando os recursos de IA.",
+      code: isWithinTrialPeriod ? "PAYMENT_REQUIRED" : "TRIAL_EXPIRED",
+      plan_tier: profile.plan_tier,
+      subscription_status: profile.subscription_status,
+      trial_ends_at: trialEndDate.toISOString(),
+    });
   } catch (err: any) {
     console.error("Erro ao validar autorização de IA:", err);
     return res.status(500).json({ error: "Falha na validação da autorização de assinatura." });

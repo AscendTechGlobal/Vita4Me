@@ -23,6 +23,8 @@ export interface UserProfile {
   emergency_contact_phone?: string | null;
   plan_tier: PlanTier;
   subscription_status: SubscriptionStatus;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
   ai_credits?: number;
