@@ -17,7 +17,6 @@ import {
   AlertCircle
 } from "lucide-react";
 import { FamilyMember, UserProfile } from "../types";
-import { saveIndicator, saveMedication, saveHealthRecord } from "../lib/healthStorage";
 import { trackEvent } from "../lib/analytics";
 
 interface HealthOnboardingModalProps {

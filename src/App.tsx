@@ -334,19 +334,22 @@ const MainAppContent: React.FC = () => {
             initialName={profile?.full_name || ""}
             initialProfile={profile}
             onSaveCompleted={async (data) => {
-              if (!user) {
+              if (!user || !user.id) {
                 return { success: false, error: "Sessão de usuário não encontrada. Faça login novamente." };
               }
 
-              // 1. Normalização estrita de dados antes do envio
+              if (!isSupabaseConfigured) {
+                return { success: false, error: "Conexão com o servidor não configurada." };
+              }
+
+              // ── A) WHITELIST: Somente colunas que existem em public.profiles ──
               const validBirthDate = data.birthDate && /^\d{4}-\d{2}-\d{2}$/.test(data.birthDate)
                 ? data.birthDate
                 : null;
-
               const validHeight = Number(data.height) > 0 ? Number(data.height) : null;
               const validWeight = Number(data.weight) > 0 ? Number(data.weight) : null;
 
-              const profilePayload = {
+              const profilePayload: Record<string, unknown> = {
                 full_name: data.name?.trim() || null,
                 date_of_birth: validBirthDate,
                 gender: data.gender?.trim() || null,
@@ -368,115 +371,132 @@ const MainAppContent: React.FC = () => {
                 updated_at: new Date().toISOString(),
               };
 
-              if (isSupabaseConfigured) {
-                // 2. Persistir Perfil no Supabase (Atualização do registro garantido pelo trigger de signup)
-                const { data: updatedRows, error: profileError } = await supabase
-                  .from('profiles')
-                  .update(profilePayload)
-                  .eq('id', user.id)
-                  .select();
+              // ── B) UPDATE profiles (sem .select() encadeado) ──
+              const { error: updateError } = await supabase
+                .from('profiles')
+                .update(profilePayload)
+                .eq('id', user.id);
 
-                if (profileError) {
-                  console.error("Supabase Error [profiles.update]:", {
-                    code: profileError.code,
-                    message: profileError.message,
-                    details: profileError.details,
-                    hint: profileError.hint,
+              if (updateError) {
+                console.error("[ONBOARDING][profiles.update]", {
+                  code: updateError.code,
+                  message: updateError.message,
+                  details: updateError.details,
+                  hint: updateError.hint,
+                });
+                return {
+                  success: false,
+                  error: `Erro ao salvar perfil [${updateError.code || 'UNKNOWN'}]: ${updateError.message || 'Erro desconhecido'}`,
+                };
+              }
+
+              // ── C) SELECT separado para confirmar persistência ──
+              const { data: verifyRow, error: verifyError } = await supabase
+                .from('profiles')
+                .select('onboarding_completed')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              if (verifyError) {
+                console.error("[ONBOARDING][profiles.verify]", {
+                  code: verifyError.code,
+                  message: verifyError.message,
+                  details: verifyError.details,
+                  hint: verifyError.hint,
+                });
+                return {
+                  success: false,
+                  error: `Erro ao verificar perfil [${verifyError.code || 'UNKNOWN'}]: ${verifyError.message || 'Erro desconhecido'}`,
+                };
+              }
+
+              if (!verifyRow || verifyRow.onboarding_completed !== true) {
+                console.error("[ONBOARDING][profiles.verify] onboarding_completed não é true após UPDATE");
+                return {
+                  success: false,
+                  error: "O perfil foi salvo mas onboarding_completed não foi confirmado. Tente novamente.",
+                };
+              }
+
+              // ── D) DADOS OPCIONAIS — falha aqui NÃO impede conclusão ──
+
+              // D.1) Indicador de Peso
+              if (validWeight) {
+                const { error: indError } = await supabase
+                  .from('health_indicators')
+                  .insert({
+                    user_id: user.id,
+                    name: 'Peso',
+                    category: 'Vital',
+                    value: validWeight,
+                    unit: 'kg',
+                    measured_at: new Date().toISOString(),
+                    status: 'normal',
                   });
-                  return {
-                    success: false,
-                    error: "Não foi possível salvar sua anamnese no servidor. Tente novamente.",
-                  };
+                if (indError) {
+                  console.error("[ONBOARDING][health_indicators.insert]", {
+                    code: indError.code,
+                    message: indError.message,
+                    details: indError.details,
+                    hint: indError.hint,
+                  });
                 }
+              }
 
-                if (!updatedRows || updatedRows.length === 0 || updatedRows[0]?.onboarding_completed !== true) {
-                  console.error("Supabase Error [profiles.update]: Registro em public.profiles não encontrado ou não atualizado para o usuário autenticado.");
-                  return {
-                    success: false,
-                    error: "Registro de perfil não encontrado no servidor. Tente fazer login novamente.",
-                  };
-                }
-
-                // 3. Persistir Indicador de Peso inicial no Supabase (se fornecido)
-                if (validWeight) {
-                  const { error: indError } = await supabase
-                    .from('health_indicators')
-                    .insert({
-                      user_id: user.id,
-                      name: 'Peso',
-                      category: 'Vital',
-                      value: validWeight,
-                      unit: 'kg',
-                      measured_at: new Date().toISOString(),
-                      status: 'normal',
-                    });
-                  if (indError) {
-                    console.error("Supabase Error [health_indicators.insert]:", {
-                      code: indError.code,
-                      message: indError.message,
-                      details: indError.details,
-                      hint: indError.hint,
-                    });
-                  }
-                }
-
-                // 4. Persistir Medicamentos contínuos no Supabase (se fornecidos)
-                if (Array.isArray(data.medications) && data.medications.length > 0) {
-                  for (const med of data.medications) {
-                    if (med && med.name && med.name.trim()) {
-                      const { error: medError } = await supabase
-                        .from('medications')
-                        .insert({
-                          user_id: user.id,
-                          name: med.name.trim(),
-                          dosage: med.dosage?.trim() || '1 dose',
-                          frequency: med.frequency?.trim() || '1x ao dia',
-                          schedule_times: med.schedule ? [med.schedule] : ['08:00'],
-                          is_continuous: true,
-                          is_active: true,
-                          updated_at: new Date().toISOString(),
-                        });
-                      if (medError) {
-                        console.error("Supabase Error [medications.insert]:", {
-                          code: medError.code,
-                          message: medError.message,
-                          details: medError.details,
-                          hint: medError.hint,
-                        });
-                      }
-                    }
-                  }
-                }
-
-                // 5. Persistir Alergias no histórico clínico do Supabase (se fornecidas)
-                if (Array.isArray(data.allergies) && data.allergies.length > 0) {
-                  for (const al of data.allergies) {
-                    if (al && al.trim()) {
-                      const { error: recError } = await supabase
-                        .from('health_records')
-                        .insert({
-                          user_id: user.id,
-                          record_type: 'alergia',
-                          title: `Alergia: ${al.trim()}`,
-                          description: 'Declarada na anamnese médica inicial.',
-                          event_date: new Date().toISOString().split('T')[0],
-                          tags: ['Alergia', 'Anamnese'],
-                          updated_at: new Date().toISOString(),
-                        });
-                      if (recError) {
-                        console.error("Supabase Error [health_records.insert]:", {
-                          code: recError.code,
-                          message: recError.message,
-                          details: recError.details,
-                          hint: recError.hint,
-                        });
-                      }
+              // D.2) Medicamentos (apenas com nome real preenchido)
+              if (Array.isArray(data.medications)) {
+                for (const med of data.medications) {
+                  if (med?.name?.trim()) {
+                    const { error: medError } = await supabase
+                      .from('medications')
+                      .insert({
+                        user_id: user.id,
+                        name: med.name.trim(),
+                        dosage: med.dosage?.trim() || '1 dose',
+                        frequency: med.frequency?.trim() || '1x ao dia',
+                        schedule_times: med.schedule ? [med.schedule] : ['08:00'],
+                        is_continuous: true,
+                        is_active: true,
+                      });
+                    if (medError) {
+                      console.error("[ONBOARDING][medications.insert]", {
+                        code: medError.code,
+                        message: medError.message,
+                        details: medError.details,
+                        hint: medError.hint,
+                      });
                     }
                   }
                 }
               }
 
-              // 6. Atualizar estado global e fechar modal
+              // D.3) Alergias como health_records (apenas com texto real)
+              if (Array.isArray(data.allergies)) {
+                for (const al of data.allergies) {
+                  if (al?.trim()) {
+                    const { error: recError } = await supabase
+                      .from('health_records')
+                      .insert({
+                        user_id: user.id,
+                        record_type: 'alergia',
+                        title: `Alergia: ${al.trim()}`,
+                        description: 'Declarada na anamnese médica inicial.',
+                        event_date: new Date().toISOString().split('T')[0],
+                        tags: ['Alergia', 'Anamnese'],
+                      });
+                    if (recError) {
+                      console.error("[ONBOARDING][health_records.insert]", {
+                        code: recError.code,
+                        message: recError.message,
+                        details: recError.details,
+                        hint: recError.hint,
+                      });
+                    }
+                  }
+                }
+              }
+
+              // ── E) REFRESH e FECHAMENTO ──
               await refreshProfile();
               refreshAllData();
               setIsOnboardingModalOpen(false);
