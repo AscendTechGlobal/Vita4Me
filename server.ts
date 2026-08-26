@@ -76,9 +76,9 @@ const getGeminiClient = () => {
 };
 
 /**
- * Utilitário com retry automático para tolerância a picos temporários na API do Gemini (ex: status 503 / 429)
+ * Utilitário resiliente com retry exponencial para tolerância a picos de alta demanda da API Gemini (status 503 / 429)
  */
-async function generateGeminiContentWithRetry(ai: GoogleGenAI, params: any, maxRetries = 2) {
+async function generateGeminiContentWithRetry(ai: GoogleGenAI, params: any, maxRetries = 3) {
   let lastError: any = null;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -87,8 +87,9 @@ async function generateGeminiContentWithRetry(ai: GoogleGenAI, params: any, maxR
       lastError = err;
       const isTransient = err?.status === 503 || err?.status === 429 || err?.message?.includes("high demand") || err?.message?.includes("UNAVAILABLE");
       if (isTransient && attempt < maxRetries) {
-        console.warn(`[GEMINI][RETRY] Spike temporário detectado (status=${err?.status}). Aguardando 1.5s antes da tentativa ${attempt + 1}...`);
-        await new Promise((r) => setTimeout(r, 1500));
+        const delayMs = attempt * 2000;
+        console.warn(`[GEMINI][RETRY] Spike temporário 503/429 detectado. Aguardando ${delayMs / 1000}s antes da tentativa ${attempt + 1}/${maxRetries}...`);
+        await new Promise((r) => setTimeout(r, delayMs));
         continue;
       }
       throw err;
@@ -1083,7 +1084,7 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
   ]
 }`;
 
-    const response = await ai.models.generateContent({
+    const response = await generateGeminiContentWithRetry(ai, {
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
@@ -1092,52 +1093,57 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
       },
     });
 
-    const text = response.text || "{}";
-    const parsed = JSON.parse(text);
+    const parsed = extractJsonFromText(response.text || "{}") || {};
     return res.json(parsed);
   } catch (error: any) {
     console.error("Erro no tradutor de exames:", error);
     res.status(500).json({ error: "Falha ao processar o exame de forma segura." });
   }
 });
-
-/**
+   /**
  * ENDPOINT 2: ASSISTENTE CONVERSACIONAL VITA4ME
  * Protegido com validação JWT, autorização server-side, tolerância a contexto parcial e isolamento horizontal de dados
  */
 app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
+  const requestId = crypto.randomUUID();
+  const startTime = Date.now();
+  let currentStage = "CHAT_REQUEST_RECEIVED";
+
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: "Usuário não autenticado." });
+      return res.status(401).json({ success: false, code: "AUTH_FAILED", message: "Usuário não autenticado.", requestId });
     }
+    currentStage = "AUTH_OK";
 
     const { message, familyMemberId } = req.body;
 
     if (!message || typeof message !== "string" || message.trim().length === 0) {
-      return res.status(400).json({ error: "A mensagem é obrigatória." });
+      return res.status(400).json({ success: false, code: "INVALID_MESSAGE", message: "A mensagem é obrigatória.", requestId });
     }
 
     if (!supabaseAdmin) {
-      return res.status(503).json({ error: "Serviço de prontuário indisponível no momento." });
+      return res.status(503).json({ success: false, code: "DATABASE_UNAVAILABLE", message: "Serviço de prontuário indisponível no momento.", requestId });
     }
 
     // 1. Busca segura e paralela dos dados médicos no Supabase com Promise.allSettled (Tolerância a Contexto Parcial)
-    // Se familyMemberId for fornecido, valida se pertence a req.user.id para impedir IDOR
     let validatedFamilyMemberId: string | null = null;
     let targetPatientName = "Paciente";
 
     if (familyMemberId && typeof familyMemberId === "string") {
-      const { data: member } = await supabaseAdmin
-        .from("family_members")
-        .select("id, name, relationship, blood_type, allergies, chronic_conditions")
-        .eq("id", familyMemberId)
-        .eq("user_id", userId)
-        .maybeSingle();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(familyMemberId);
+      if (isUuid) {
+        const { data: member } = await supabaseAdmin
+          .from("family_members")
+          .select("id, name, relationship, blood_type, allergies, chronic_conditions")
+          .eq("id", familyMemberId)
+          .eq("user_id", userId)
+          .maybeSingle();
 
-      if (member) {
-        validatedFamilyMemberId = member.id;
-        targetPatientName = member.name || "Familiar";
+        if (member) {
+          validatedFamilyMemberId = member.id;
+          targetPatientName = member.name || "Familiar";
+        }
       }
     }
 
@@ -1156,7 +1162,7 @@ app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: Authenticated
         .eq("id", userId)
         .maybeSingle(),
 
-      // Exames com Biomarcadores Estruturados (Upload-First & Manuais)
+      // Exames com Biomarcadores Estruturados
       (validatedFamilyMemberId
         ? supabaseAdmin.from("lab_exams").select("title, category, exam_date, laboratory, doctor_name, ai_summary, ai_simple_translation, ai_key_findings").eq("user_id", userId).eq("family_member_id", validatedFamilyMemberId).order("exam_date", { ascending: false }).limit(10)
         : supabaseAdmin.from("lab_exams").select("title, category, exam_date, laboratory, doctor_name, ai_summary, ai_simple_translation, ai_key_findings").eq("user_id", userId).order("exam_date", { ascending: false }).limit(10)
@@ -1168,10 +1174,10 @@ app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: Authenticated
         : supabaseAdmin.from("health_indicators").select("name, category, value, unit, reference_min, reference_max, status, measured_at").eq("user_id", userId).order("measured_at", { ascending: false }).limit(20)
       ),
 
-      // Medicamentos em Uso
+      // Medicamentos em Uso (utiliza instructions em vez de notes)
       (validatedFamilyMemberId
-        ? supabaseAdmin.from("medications").select("name, dosage, frequency, schedule_times, is_continuous, notes").eq("user_id", userId).eq("family_member_id", validatedFamilyMemberId).eq("is_active", true).order("created_at", { ascending: false }).limit(15)
-        : supabaseAdmin.from("medications").select("name, dosage, frequency, schedule_times, is_continuous, notes").eq("user_id", userId).eq("is_active", true).order("created_at", { ascending: false }).limit(15)
+        ? supabaseAdmin.from("medications").select("name, dosage, frequency, schedule_times, instructions, is_continuous").eq("user_id", userId).eq("family_member_id", validatedFamilyMemberId).eq("is_active", true).order("created_at", { ascending: false }).limit(15)
+        : supabaseAdmin.from("medications").select("name, dosage, frequency, schedule_times, instructions, is_continuous").eq("user_id", userId).eq("is_active", true).order("created_at", { ascending: false }).limit(15)
       ),
 
       // Linha do Tempo / Histórico
@@ -1197,6 +1203,8 @@ app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: Authenticated
     const records = recordsResult.status === "fulfilled" && Array.isArray(recordsResult.value?.data) ? recordsResult.value.data : [];
     const habits = habitsResult.status === "fulfilled" && Array.isArray(habitsResult.value?.data) ? habitsResult.value.data : [];
 
+    currentStage = "CONTEXT_BUILD_OK";
+
     const patientName = targetPatientName !== "Paciente" ? targetPatientName : (profile?.full_name || "Paciente");
 
     // Formatação amigável dos exames com biomarcadores estruturados (ai_key_findings)
@@ -1212,7 +1220,7 @@ app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: Authenticated
       : "Nenhum exame cadastrado no prontuário.";
 
     const formattedMeds = medications.length > 0
-      ? medications.map((m: any) => `• ${m.name} (${m.dosage || 'Dose padrão'} - ${m.frequency || 'Horário diário'}${m.is_continuous ? ' - Uso contínuo' : ''}${m.notes ? ` - Obs: ${m.notes}` : ''})`).join("\n")
+      ? medications.map((m: any) => `• ${m.name} (${m.dosage || 'Dose padrão'} - ${m.frequency || 'Horário diário'}${m.is_continuous ? ' - Uso contínuo' : ''}${m.instructions ? ` - Instruções: ${m.instructions}` : ''})`).join("\n")
       : "Nenhum medicamento de uso contínuo registrado.";
 
     const formattedIndicators = indicators.length > 0
@@ -1230,10 +1238,15 @@ app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: Authenticated
     const ai = getGeminiClient();
 
     if (!ai) {
-      return res.json({
-        reply: `Olá, ${patientName}! No momento estou em modo offline. Seus dados estão salvos e organizados com segurança. Como posso ajudar com a navegação do seu prontuário hoje?`,
+      return res.status(503).json({
+        success: false,
+        code: "GEMINI_NOT_CONFIGURED",
+        message: "Serviço de Inteligência Artificial temporariamente indisponível.",
+        requestId,
       });
     }
+
+    currentStage = "GEMINI_REQUEST_START";
 
     const prompt = `Você é o Assistente Clínico Conversacional e Especialista em Letramento em Saúde da Vita4Me.
 Sua missão é responder às dúvidas de saúde do paciente com acolhimento, clareza, empatia e rigor científico, sempre utilizando como base o prontuário eletrônico autorizado do paciente.
@@ -1278,10 +1291,25 @@ DIRETRIZES CLÍNICAS E LIMITES ÉTICOS MANDATÓRIOS (NÃO NEGOCIÁVEIS):
       },
     });
 
-    return res.json({ reply: response.text || "Como posso ajudar com a organização da sua saúde hoje?" });
+    currentStage = "GEMINI_REQUEST_OK";
+    const durationMs = Date.now() - startTime;
+    console.log(`[CHAT][SUCCESS] requestId=${requestId} stage=CHAT_RESPONSE_OK duration_ms=${durationMs}`);
+
+    return res.json({
+      success: true,
+      reply: response.text || "Como posso ajudar com a organização da sua saúde hoje?",
+      requestId,
+    });
   } catch (error: any) {
-    console.error("Erro no chat Vita4Me:", error?.message || "Erro desconhecido");
-    res.status(500).json({ error: "Erro ao processar mensagem do assistente." });
+    const durationMs = Date.now() - startTime;
+    console.error(`[CHAT][STAGE:${currentStage}][FAILED] requestId=${requestId} duration_ms=${durationMs} err=${error?.message}`);
+    return res.status(500).json({
+      success: false,
+      code: "CHAT_FAILED",
+      message: "Não foi possível processar a consulta com IA no momento. Tente novamente.",
+      requestId,
+      stage: currentStage,
+    });
   }
 });
 

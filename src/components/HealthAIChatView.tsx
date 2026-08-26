@@ -98,12 +98,20 @@ export const HealthAIChatView: React.FC<HealthAIChatViewProps> = ({
       } else {
         const errorData = await res.json().catch(() => ({}));
         
-        if (res.status === 402 || res.status === 403 || errorData.code === "PAYMENT_REQUIRED" || errorData.code === "TRIAL_EXPIRED") {
+        if (res.status === 401) {
+          const authMsg: HealthAIChatMessage = {
+            id: "ai-auth-" + Date.now(),
+            sender: "assistant",
+            content: "Sua sessão de autenticação expirou. Faça login novamente para continuar a usar o assistente.",
+            timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          };
+          setMessages((prev) => [...prev, authMsg]);
+        } else if (res.status === 402 || res.status === 403 || errorData.code === "PAYMENT_REQUIRED" || errorData.code === "TRIAL_EXPIRED") {
           setBillingRequired(true);
           const trialMsg: HealthAIChatMessage = {
             id: "ai-pay-" + Date.now(),
             sender: "assistant",
-            content: errorData.error || "O Assistente com IA está disponível durante os 7 dias de teste grátis ou nos planos ativos do Vita4Me. Assine ou reative seu plano para continuar.",
+            content: errorData.message || errorData.error || "O Assistente com IA está disponível durante os 7 dias de teste grátis ou nos planos ativos do Vita4Me. Assine ou reative seu plano para continuar.",
             timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
           };
           setMessages((prev) => [...prev, trialMsg]);
@@ -111,23 +119,32 @@ export const HealthAIChatView: React.FC<HealthAIChatViewProps> = ({
           const rateMsg: HealthAIChatMessage = {
             id: "ai-rate-" + Date.now(),
             sender: "assistant",
-            content: "Você atingiu o limite temporário de mensagens por minuto. Por favor, aguarde alguns instantes antes de enviar uma nova pergunta.",
+            content: "Você atingiu o limite temporário de consultas por minuto. Por favor, aguarde alguns instantes antes de enviar uma nova pergunta.",
             timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
           };
           setMessages((prev) => [...prev, rateMsg]);
         } else {
-          throw new Error(errorData.error || "Erro na resposta do servidor");
+          setLastFailedMessage(text.trim());
+          const codePrefix = errorData.code ? `[${errorData.code}] ` : "";
+          const refSuffix = errorData.requestId ? ` (Ref: ${errorData.requestId.slice(0, 8)})` : "";
+          const errorMsg: HealthAIChatMessage = {
+            id: "ai-err-" + Date.now(),
+            sender: "assistant",
+            content: `${codePrefix}${errorData.message || errorData.error || "Houve uma instabilidade temporária ao consultar o prontuário."}${refSuffix}`,
+            timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          };
+          setMessages((prev) => [...prev, errorMsg]);
         }
       }
     } catch (err: any) {
       setLastFailedMessage(text.trim());
-      const errorMsg: HealthAIChatMessage = {
-        id: "ai-err-" + Date.now(),
+      const netErrorMsg: HealthAIChatMessage = {
+        id: "ai-net-" + Date.now(),
         sender: "assistant",
-        content: "Não foi possível consultar seu prontuário no momento devido a uma instabilidade passageira de rede. Clique no botão de tentar novamente.",
+        content: "Não foi possível conectar ao servidor. Verifique sua conexão com a internet.",
         timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) => [...prev, netErrorMsg]);
     } finally {
       setIsLoading(false);
     }
