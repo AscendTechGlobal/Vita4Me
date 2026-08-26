@@ -50,11 +50,14 @@ export function saveExam(exam: LabExam): LabExam {
       if (user) {
         const payload = {
           user_id: user.id,
+          family_member_id: exam.family_member_id || null,
           title: exam.title,
           category: exam.category,
           exam_date: exam.exam_date || new Date().toISOString().split('T')[0],
           laboratory: exam.laboratory || null,
           doctor_name: exam.doctor_name || null,
+          file_url: exam.file_url || null,
+          raw_text: exam.raw_text || null,
           ai_summary: exam.ai_summary || null,
           ai_simple_translation: exam.ai_simple_translation || null,
           ai_key_findings: exam.ai_key_findings || [],

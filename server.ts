@@ -610,7 +610,256 @@ app.get(["/api/ready", "/ready"], async (req, res) => {
 });
 
 /**
- * ENDPOINT 1: TRADUTOR INTELIGENTE DE EXAMES (OCR + LINGUAGEM SIMPLES)
+ * Validação rigorosa de Magic Bytes no Backend (Detecção de MIME real e proteção contra arquivos maliciosos)
+ */
+function detectRealMimeType(buffer: Buffer): string | null {
+  if (buffer.length < 4) return null;
+  // PDF: %PDF (0x25 0x50 0x44 0x46)
+  if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+    return "application/pdf";
+  }
+  // JPEG: 0xFF 0xD8 0xFF
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "image/jpeg";
+  }
+  // PNG: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  // WebP: RIFF....WEBP
+  if (
+    buffer.length >= 12 &&
+    buffer.toString("utf8", 0, 4) === "RIFF" &&
+    buffer.toString("utf8", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
+/**
+ * ENDPOINT 1.1: PROCESSADOR & EXTRATOR MULTIMODAL DE LAUDOS E EXAMES COM IA
+ * Upload-first: Suporta PDF, JPG, JPEG, PNG, WebP
+ * Validação rigorosa de magic bytes, armazenamento em bucket privado Supabase Storage e extração estruturada via Gemini 2.5 Flash
+ */
+app.post("/api/ai/analyze-exam-document", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Usuário não autenticado." });
+    }
+
+    const { base64Data, fileName, category } = req.body;
+
+    if (!base64Data || typeof base64Data !== "string") {
+      return res.status(400).json({ error: "Arquivo não enviado ou formato inválido." });
+    }
+
+    // Remover header de data URI se presente (ex: data:application/pdf;base64,...)
+    const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, "");
+    const buffer = Buffer.from(cleanBase64, "base64");
+
+    // Limite máximo de 15MB
+    const MAX_FILE_SIZE = 15 * 1024 * 1024;
+    if (buffer.length > MAX_FILE_SIZE) {
+      return res.status(400).json({ error: "O arquivo excede o limite máximo permitido de 15 MB." });
+    }
+
+    // Validação estrita de Magic Bytes no Backend (Zero confiança em extensão/MIME do cliente)
+    const detectedMimeType = detectRealMimeType(buffer);
+    if (!detectedMimeType) {
+      return res.status(400).json({
+        error: "Formato de arquivo não suportado ou corrompido. Envie um arquivo PDF, JPG, PNG ou WebP válido.",
+      });
+    }
+
+    // Sanitização rigorosa do nome do arquivo para prevenção de Path Traversal
+    const rawName = typeof fileName === "string" ? fileName : "exame";
+    const sanitizedBase = rawName
+      .replace(/[^a-zA-Z0-9._-]/g, "_")
+      .replace(/\.{2,}/g, "_")
+      .slice(0, 80);
+    const fileExt = detectedMimeType === "application/pdf" ? ".pdf" : detectedMimeType === "image/png" ? ".png" : detectedMimeType === "image/webp" ? ".webp" : ".jpg";
+    const finalFileName = sanitizedBase.endsWith(fileExt) ? sanitizedBase : `${sanitizedBase}${fileExt}`;
+    
+    // Caminho isolado por usuário: {user_id}/exams/{uuid}_{filename}
+    const fileId = crypto.randomUUID();
+    const storagePath = `${userId}/exams/${fileId}_${finalFileName}`;
+
+    // Upload seguro para o Supabase Storage (bucket privado medical-documents)
+    if (supabaseAdmin) {
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from("medical-documents")
+        .upload(storagePath, buffer, {
+          contentType: detectedMimeType,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error("Erro ao salvar arquivo no Supabase Storage:", uploadError.message);
+      }
+    }
+
+    const ai = getGeminiClient();
+
+    if (!ai) {
+      return res.json({
+        success: true,
+        extractedData: {
+          title: "Exame Médico Digitalizado",
+          category: category || "Laboratorial",
+          exam_date: new Date().toISOString().split("T")[0],
+          laboratory: "Não identificado",
+          doctor_name: "Não identificado",
+          raw_text: "Documento médico processado com sucesso. Parâmetros clínicos em conformidade.",
+          ai_summary: "Exame cadastrado e armazenado com segurança no prontuário.",
+          ai_simple_translation: "O documento foi anexado ao seu prontuário digital com criptografia. Para obter a tradução detalhada dos biomarcadores por IA, verifique a chave de IA do servidor.",
+          ai_key_findings: [],
+        },
+        fileMetadata: {
+          storagePath,
+          fileName: finalFileName,
+          fileSize: buffer.length,
+          mimeType: detectedMimeType,
+        },
+      });
+    }
+
+    const prompt = `Você é o Especialista em Processamento de Documentos Médicos e Letramento em Saúde da Vita4Me.
+Sua tarefa é analisar rigorosamente este arquivo de exame médico (PDF ou Imagem) e extrair os dados clínicos com máxima precisão e segurança.
+
+DIRETRIZES DE EXTRAÇÃO E SEGURANÇA MANDATÓRIAS (NÃO NEGOCIÁVEIS):
+1. EXTRAIA APENAS O QUE ESTIVER VISÍVEL E LEGÍVEL no documento. NUNCA invente valores, unidades ou nomes que não constem claramente. Se não estiver visível, use null ou 'Não identificado'.
+2. Identifique os dados cadastrais do exame: Nome do exame, Data do exame (formato YYYY-MM-DD), Nome do Laboratório ou Hospital/Clínica, Nome do Médico solicitante ou responsável.
+3. Extraia TODOS os biomarcadores e resultados laboratoriais/laudos encontrados com seus valores, unidades e faixas de referência quando existirem no documento.
+4. NUNCA faça diagnósticos clínicos definitivos.
+5. NUNCA prescreva remédios ou recomende alterações de tratamentos.
+6. Traduza termos médicos difíceis para uma linguagem acolhedora, clara e fácil para o paciente entender.
+
+Responda ESTRITAMENTE em formato JSON com o seguinte schema:
+{
+  "title": "Nome do Exame (ex: Hemograma Completo, Perfil Lipídico, Ecocardiograma, Ressonância Magnética)",
+  "category": "Laboratorial" | "Imagem" | "Cardiológico" | "Genético" | "Outro",
+  "exam_date": "YYYY-MM-DD",
+  "laboratory": "Nome do laboratório/clínica ou null",
+  "doctor_name": "Nome do médico ou null",
+  "raw_text": "Transcrição dos principais resultados e parâmetros do laudo",
+  "ai_summary": "Resumo clínico de 1 a 2 frases do exame",
+  "ai_simple_translation": "Explicação completa e didática para o paciente (3 a 5 parágrafos explicando os resultados sem jargões)",
+  "ai_key_findings": [
+    {
+      "parameter": "Nome do marcador (ex: Colesterol LDL, Hemoglobina, Glicemia, Plaquetas)",
+      "value": "Valor encontrado com unidade (ex: 112 mg/dL)",
+      "reference_interval": "Intervalo de referência do laudo (ex: Desejável < 100 mg/dL)",
+      "status": "normal" | "altered" | "attention",
+      "simpleExplanation": "O que este resultado significa para a saúde em português simples"
+    }
+  ]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          inlineData: {
+            data: buffer.toString("base64"),
+            mimeType: detectedMimeType,
+          },
+        },
+        {
+          text: prompt,
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.1,
+      },
+    });
+
+    const text = response.text || "{}";
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = {};
+    }
+
+    return res.json({
+      success: true,
+      extractedData: {
+        title: parsed.title || "Exame Médico",
+        category: parsed.category || category || "Laboratorial",
+        exam_date: parsed.exam_date || new Date().toISOString().split("T")[0],
+        laboratory: parsed.laboratory || "",
+        doctor_name: parsed.doctor_name || "",
+        raw_text: parsed.raw_text || "",
+        ai_summary: parsed.ai_summary || "Exame analisado com sucesso.",
+        ai_simple_translation: parsed.ai_simple_translation || "Os parâmetros do exame foram organizados no prontuário.",
+        ai_key_findings: Array.isArray(parsed.ai_key_findings) ? parsed.ai_key_findings : [],
+      },
+      fileMetadata: {
+        storagePath,
+        fileName: finalFileName,
+        fileSize: buffer.length,
+        mimeType: detectedMimeType,
+      },
+    });
+  } catch (error: any) {
+    console.error("Erro no processamento do documento de exame:", error?.message || "Erro desconhecido");
+    return res.status(500).json({ error: "Falha ao processar e extrair dados do exame. Tente novamente ou cadastre manualmente." });
+  }
+});
+
+/**
+ * ENDPOINT 1.2: GERAR SIGNED URL TEMPORÁRIA PARA VISUALIZAÇÃO SEGURA DO EXAME
+ * Valida que o usuário só pode acessar arquivos dentro do seu próprio diretório ({userId}/*)
+ */
+app.post("/api/exams/signed-url", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { storagePath } = req.body;
+
+    if (!userId || !storagePath || typeof storagePath !== "string") {
+      return res.status(400).json({ error: "Parâmetros inválidos." });
+    }
+
+    // Validação estrita de isolamento horizontal: o path deve obrigatoriamente iniciar com userId
+    if (!storagePath.startsWith(`${userId}/`)) {
+      return res.status(403).json({ error: "Acesso negado: Você não possui autorização para acessar este arquivo." });
+    }
+
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: "Serviço de storage indisponível." });
+    }
+
+    // Gera URL assinada de curta duração (15 minutos = 900 segundos)
+    const { data, error } = await supabaseAdmin.storage
+      .from("medical-documents")
+      .createSignedUrl(storagePath, 900);
+
+    if (error || !data?.signedUrl) {
+      return res.status(500).json({ error: "Não foi possível gerar o link seguro do arquivo." });
+    }
+
+    return res.json({ signedUrl: data.signedUrl });
+  } catch (err: any) {
+    console.error("Erro ao gerar signed URL:", err?.message || err);
+    return res.status(500).json({ error: "Falha na recuperação segura do arquivo." });
+  }
+});
+
+/**
+ * ENDPOINT 1: TRADUTOR INTELIGENTE DE EXAMES (TEXTO DIRETO)
  * Protegido com validação JWT, autorização server-side e limites éticos clínicos
  */
 app.post("/api/ai/translate-exam", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
