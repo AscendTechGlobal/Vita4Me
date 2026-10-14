@@ -625,17 +625,50 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
                     {/* Price Tag */}
                     <div className="pb-4 border-b border-[#126D4A]">
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-sm font-bold text-[#CDEBC5]">R$</span>
-                        <span className="text-4xl font-black text-white">{price}</span>
-                        <span className="text-xs text-[#CDEBC5]">/mês</span>
-                      </div>
-                      {billingInterval === "yearly" && (
-                        <span className="text-[11px] text-[#7AC943] font-bold block mt-1">
-                          Faturado anualmente com 20% de desconto
-                        </span>
+                      {billingInterval === "yearly" ? (
+                        <div className="space-y-1">
+                          {/* Valor cheio anual riscado + Economia */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs text-[#CDEBC5]/60 line-through font-mono">
+                              De R$ {plan.priceMonthly * 12}/ano
+                            </span>
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-[#7AC943]/20 text-[#7AC943] border border-[#7AC943]/30">
+                              Economize R$ {(plan.priceMonthly * 12) - (plan.priceYearlyMonthlyEquivalent * 12)}/ano
+                            </span>
+                          </div>
+
+                          {/* Valor anual com desconto em destaque */}
+                          <div className="flex items-baseline gap-1.5 flex-wrap">
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-sm font-bold text-[#CDEBC5]">R$</span>
+                              <span className="text-4xl font-black text-white font-mono">
+                                {plan.priceYearlyMonthlyEquivalent * 12}
+                              </span>
+                              <span className="text-xs text-[#CDEBC5]">/ano</span>
+                            </div>
+                            <span className="text-xs font-bold text-[#7AC943]">
+                              (equivale a R$ {plan.priceYearlyMonthlyEquivalent}/mês)
+                            </span>
+                          </div>
+
+                          <span className="text-[11px] text-[#7AC943] font-bold block">
+                            Faturado anualmente com 20% de desconto
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-sm font-bold text-[#CDEBC5]">R$</span>
+                            <span className="text-4xl font-black text-white font-mono">{plan.priceMonthly}</span>
+                            <span className="text-xs text-[#CDEBC5]">/mês</span>
+                          </div>
+                          <span className="text-[11px] text-[#CDEBC5]/70 block">
+                            Faturamento mensal recorrente
+                          </span>
+                        </div>
                       )}
-                      <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#7AC943]/15 border border-[#7AC943]/30 text-[#7AC943] text-xs font-bold">
+
+                      <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#7AC943]/15 border border-[#7AC943]/30 text-[#7AC943] text-xs font-bold">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>7 dias de teste gratuito incluso</span>
                       </div>

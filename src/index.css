@@ -4,74 +4,107 @@
 
 @layer base {
   :root {
-    --color-deep-green: #0A3B2E;
-    --color-forest-green: #126D4A;
-    --color-lime-green: #7AC943;
-    --color-light-green: #CDEBC5;
-    --color-off-white: #F3FAF6;
+    /* ========================================================
+       MODO CLARO TRADICIONAL
+       Interface limpa, moderna, fundo claro suave, cartões brancos,
+       bordas sutis e alto contraste de legibilidade.
+       ======================================================== */
+    --color-slate-50: #F8FAFC;
+    --color-slate-100: #F1F5F9;
+    --color-slate-200: #E2E8F0;
+    --color-slate-300: #CBD5E1;
+    --color-slate-400: #94A3B8;
+    --color-slate-500: #64748B;
+    --color-slate-600: #475569;
+    --color-slate-700: #334155;
+    --color-slate-800: #1E293B;
+    --color-slate-900: #0F172A;
+    --color-slate-950: #020617;
 
-    --bg-main: #F3FAF6;
-    --bg-card: #ffffff;
-    --bg-card-sub: #E8F5EE;
-    --border-color: #CDEBC5;
-    --text-primary: #0A3B2E;
-    --text-secondary: #2C5E4E;
-    --text-muted: #5C8778;
-    
-    --brand-primary: #126D4A;
-    --brand-hover: #0A3B2E;
-    --brand-accent: #7AC943;
-    --brand-light: #CDEBC5;
+    /* Acentos Esmeralda Tradicionais (Saúde & Vitalidade) */
+    --color-emerald-50: #ECFDF5;
+    --color-emerald-100: #D1FAE5;
+    --color-emerald-200: #A7F3D0;
+    --color-emerald-300: #6EE7B7;
+    --color-emerald-400: #34D399;
+    --color-emerald-500: #10B981;
+    --color-emerald-600: #059669;
+    --color-emerald-700: #047857;
+    --color-emerald-800: #065F46;
+    --color-emerald-900: #064E3B;
+    --color-emerald-950: #022C22;
+
+    --bg-main: #F8FAFC;
+    --bg-card: #FFFFFF;
+    --bg-card-sub: #F1F5F9;
+    --border-color: #E2E8F0;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #64748B;
+
+    --brand-primary: #059669;
+    --brand-hover: #047857;
+    --brand-accent: #10B981;
+    --brand-light: #ECFDF5;
   }
 
   .dark {
-    --color-deep-green: #0A3B2E;
-    --color-forest-green: #126D4A;
-    --color-lime-green: #7AC943;
-    --color-light-green: #CDEBC5;
-    --color-off-white: #F3FAF6;
+    /* ========================================================
+       MODO ESCURO INSPIRADO NO SPOTIFY
+       - Fundo Principal (Canvas): Preto Obsidian Spotify #121212
+       - Cards / Superfícies elevadas: Cinza Escuro Spotify #181818
+       - Sub-containers / Bordas / Linhas: #242424 a #282828
+       - Hover em superfícies / botões secundários: #333333
+       - Texto Secundário: Cinza Spotify #B3B3B3
+       - Destaques / Ação Principal / Toggles: Verde Spotify #1DB954 / #1ED760
+       ======================================================== */
+    --color-slate-950: #121212; /* Fundo base Spotify */
+    --color-slate-900: #181818; /* Cards e painéis Spotify */
+    --color-slate-800: #282828; /* Bordas e sub-superfícies Spotify */
+    --color-slate-700: #333333; /* Hover em cards e divisores */
+    --color-slate-600: #535353;
+    --color-slate-500: #7C7C7C;
+    --color-slate-400: #B3B3B3; /* Subtexto clássico Spotify */
+    --color-slate-300: #D1D1D1;
+    --color-slate-200: #E5E5E5;
+    --color-slate-100: #F5F5F5;
 
-    --bg-main: #061F18;
-    --bg-card: #0A3B2E;
-    --bg-card-sub: #072B21;
-    --border-color: #126D4A;
-    --text-primary: #F3FAF6;
-    --text-secondary: #CDEBC5;
-    --text-muted: #8FBFA9;
+    /* Acentos Verde Spotify (#1DB954 brand / #1ED760 bright hover) */
+    --color-emerald-600: #1DB954;
+    --color-emerald-500: #1ED760;
+    --color-emerald-400: #1ED760;
+    --color-emerald-300: #42E37E;
+    --color-emerald-200: #77ED9F;
+    --color-emerald-100: #BCF7D2;
+    --color-emerald-50: #E8FBF0;
+    --color-emerald-700: #179B45;
+    --color-emerald-800: #127C38;
+    --color-emerald-900: #0E4B25;
+    --color-emerald-950: #0B2B16;
 
-    --brand-primary: #7AC943;
-    --brand-hover: #96DC63;
-    --brand-accent: #7AC943;
-    --brand-light: #126D4A;
+    --bg-main: #121212;
+    --bg-card: #181818;
+    --bg-card-sub: #242424;
+    --border-color: #282828;
+    --text-primary: #FFFFFF;
+    --text-secondary: #B3B3B3;
+    --text-muted: #7C7C7C;
+
+    --brand-primary: #1DB954;
+    --brand-hover: #1ED760;
+    --brand-accent: #1ED760;
+    --brand-light: #11341C;
   }
 
   body {
     background-color: var(--bg-main);
     color: var(--text-primary);
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 }
 
-/* Custom Utilities for Vita4Me Brand Colors */
-.bg-vita-deep { background-color: #0A3B2E; }
-.bg-vita-forest { background-color: #126D4A; }
-.bg-vita-lime { background-color: #7AC943; }
-.bg-vita-light { background-color: #CDEBC5; }
-.bg-vita-offwhite { background-color: #F3FAF6; }
-
-.text-vita-deep { color: #0A3B2E; }
-.text-vita-forest { color: #126D4A; }
-.text-vita-lime { color: #7AC943; }
-.text-vita-light { color: #CDEBC5; }
-.text-vita-offwhite { color: #F3FAF6; }
-
-.border-vita-deep { border-color: #0A3B2E; }
-.border-vita-forest { border-color: #126D4A; }
-.border-vita-lime { border-color: #7AC943; }
-.border-vita-light { border-color: #CDEBC5; }
-
-/* Custom Scrollbar */
+/* Custom Scrollbar adaptável ao Spotify Dark & Light */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -86,6 +119,14 @@
   border-radius: 9999px;
 }
 
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #282828;
+}
+
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #059669;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #1DB954;
 }

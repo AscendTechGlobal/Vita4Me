@@ -145,11 +145,29 @@ export const FamilyProfilesModal: React.FC<FamilyProfilesModalProps> = ({
                       </div>
                     </div>
 
-                    {isSelected && (
-                      <span className="p-1 rounded-full bg-emerald-600 text-white">
-                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {isSelected && (
+                        <span className="p-1 rounded-full bg-emerald-600 text-white">
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        </span>
+                      )}
+
+                      {member.id !== "fam-me" && member.relationship !== "Titular" && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Deseja realmente remover o perfil de ${member.name} do plano familiar?`)) {
+                              onDeleteMember(member.id);
+                            }
+                          }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                          title="Remover dependente"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}

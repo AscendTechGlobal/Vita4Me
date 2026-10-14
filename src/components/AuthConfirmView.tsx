@@ -233,10 +233,10 @@ export const AuthConfirmView: React.FC<AuthConfirmViewProps> = ({ onGoToLogin })
             </div>
             <div className="space-y-2">
               <h2 className="text-xl font-black text-white tracking-tight">
-                E-mail confirmado
+                Acesso Confirmado com Sucesso
               </h2>
               <p className="text-xs text-[#CDEBC5]/90 leading-relaxed">
-                Seu e-mail foi confirmado com sucesso. Sua conta Vita4Me está pronta.
+                Suas credenciais foram validadas com sucesso. Sua conta Vita4Me está ativa e pronta para uso.
               </p>
             </div>
 
@@ -246,10 +246,19 @@ export const AuthConfirmView: React.FC<AuthConfirmViewProps> = ({ onGoToLogin })
             </div>
 
             <button
-              onClick={onGoToLogin}
+              onClick={async () => {
+                if (isSupabaseConfigured) {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  if (session?.user) {
+                    window.location.href = "/app";
+                    return;
+                  }
+                }
+                onGoToLogin();
+              }}
               className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-[#7AC943] to-[#96DC63] hover:from-[#96DC63] hover:to-[#7AC943] text-[#0A3B2E] font-black text-xs shadow-xl shadow-[#7AC943]/20 transition-all hover:scale-[1.02] cursor-pointer flex items-center justify-center gap-2"
             >
-              <span>Entrar no Vita4Me</span>
+              <span>Acessar Prontuário Digital</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

@@ -48,9 +48,13 @@ export function saveExam(exam: LabExam): LabExam {
   if (isSupabaseConfigured) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
+        const familyMemberId = (exam.family_member_id && exam.family_member_id !== 'fam-me') 
+          ? exam.family_member_id 
+          : null;
+
         const payload = {
           user_id: user.id,
-          family_member_id: exam.family_member_id || null,
+          family_member_id: familyMemberId,
           title: exam.title,
           category: exam.category,
           exam_date: exam.exam_date || new Date().toISOString().split('T')[0],
@@ -113,8 +117,13 @@ export function saveIndicator(indicator: HealthIndicator): HealthIndicator {
   if (isSupabaseConfigured) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
+        const familyMemberId = (indicator.family_member_id && indicator.family_member_id !== 'fam-me') 
+          ? indicator.family_member_id 
+          : null;
+
         const payload = {
           user_id: user.id,
+          family_member_id: familyMemberId,
           name: indicator.name,
           category: indicator.category,
           value: indicator.value,
@@ -173,8 +182,13 @@ export function saveMedication(med: Medication): Medication {
   if (isSupabaseConfigured) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
+        const familyMemberId = (med.family_member_id && med.family_member_id !== 'fam-me') 
+          ? med.family_member_id 
+          : null;
+
         const payload = {
           user_id: user.id,
+          family_member_id: familyMemberId,
           name: med.name,
           dosage: med.dosage,
           frequency: med.frequency,
@@ -234,8 +248,13 @@ export function saveHealthRecord(record: HealthRecord): HealthRecord {
   if (isSupabaseConfigured) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
+        const familyMemberId = (record.family_member_id && record.family_member_id !== 'fam-me') 
+          ? record.family_member_id 
+          : null;
+
         const payload = {
           user_id: user.id,
+          family_member_id: familyMemberId,
           record_type: record.record_type,
           title: record.title,
           description: record.description || null,
@@ -383,4 +402,66 @@ export function saveDailyHabit(habit: Partial<DailyHabit>): DailyHabit {
   }
 
   return updated;
+}
+
+// 7. SINCRONIZAÇÃO COMPLETA DO SUPABASE (Hidratação para Multi-dispositivo & Multi-familiar)
+export async function syncAllFromSupabase(): Promise<boolean> {
+  if (!isSupabaseConfigured) return false;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    // 1. Membros Familiares
+    const { data: famData, error: famErr } = await supabase
+      .from('family_members')
+      .select('*')
+      .eq('user_id', user.id);
+    if (!famErr && famData) {
+      setStored(KEYS.FAMILY, famData);
+    }
+
+    // 2. Exames Laboratoriais
+    const { data: examData, error: examErr } = await supabase
+      .from('lab_exams')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('exam_date', { ascending: false });
+    if (!examErr && examData && examData.length > 0) {
+      setStored(KEYS.EXAMS, examData);
+    }
+
+    // 3. Indicadores de Saúde
+    const { data: indData, error: indErr } = await supabase
+      .from('health_indicators')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('measured_at', { ascending: false });
+    if (!indErr && indData && indData.length > 0) {
+      setStored(KEYS.INDICATORS, indData);
+    }
+
+    // 4. Medicamentos
+    const { data: medData, error: medErr } = await supabase
+      .from('medications')
+      .select('*')
+      .eq('user_id', user.id);
+    if (!medErr && medData && medData.length > 0) {
+      setStored(KEYS.MEDICATIONS, medData);
+    }
+
+    // 5. Linha do Tempo / Prontuário
+    const { data: recData, error: recErr } = await supabase
+      .from('health_records')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('event_date', { ascending: false });
+    if (!recErr && recData && recData.length > 0) {
+      setStored(KEYS.RECORDS, recData);
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('Aviso na sincronização do Supabase:', err);
+    return false;
+  }
 }

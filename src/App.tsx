@@ -30,6 +30,8 @@ const LoadingSpinner = () => (
 // Interface para o contexto do Outlet em AppLayout
 interface AppLayoutContext {
   activeMember: FamilyMember | null;
+  familyMembers: FamilyMember[];
+  onSelectFamilyMember: (id: string) => void;
   exams: LabExam[];
   indicators: HealthIndicator[];
   medications: Medication[];
@@ -78,6 +80,8 @@ const ExamsRoute: React.FC = () => {
     <ExamsCentralView
       exams={ctx.exams}
       activeMember={ctx.activeMember}
+      familyMembers={ctx.familyMembers}
+      onSelectFamilyMember={ctx.onSelectFamilyMember}
       onRefreshExams={ctx.refreshAllData}
       onBack={() => navigate("/app")}
     />

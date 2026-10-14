@@ -40,6 +40,7 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
 
   const markerOptions = [
     { name: "Glicemia", unit: "mg/dL", category: "Metabólico", min: 70, max: 99 },
+    { name: "Colesterol LDL", unit: "mg/dL", category: "Lipídico", min: 0, max: 130 },
     { name: "Colesterol Total", unit: "mg/dL", category: "Lipídico", min: 120, max: 190 },
     { name: "Vitamina D", unit: "ng/mL", category: "Vitaminas", min: 30, max: 60 },
     { name: "Pressão Sistólica", unit: "mmHg", category: "Vital", min: 90, max: 129 },
@@ -47,11 +48,27 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
     { name: "Peso", unit: "kg", category: "Vital", min: 50, max: 100 },
   ];
 
-  const markerData = indicators
-    .filter(i => i.name === selectedMarker)
-    .sort((a, b) => new Date(a.measured_at).getTime() - new Date(b.measured_at).getTime());
+  const isMatchForMarker = (indicatorName: string, selected: string) => {
+    const ind = indicatorName.toLowerCase();
+    const sel = selected.toLowerCase();
+    if (ind === sel) return true;
+    if (sel.includes('glic') && ind.includes('glic')) return true;
+    if (sel.includes('ldl') && ind.includes('ldl')) return true;
+    if (sel.includes('total') && (ind.includes('total') || (ind.includes('colesterol') && !ind.includes('ldl') && !ind.includes('hdl')))) return true;
+    if (sel.includes('vitamina') && (ind.includes('vitamina') || ind.includes('25-oh') || ind.includes('vit d'))) return true;
+    if (sel.includes('sistólica') && (ind.includes('sistólica') || ind.includes('sistolica'))) return true;
+    if (sel.includes('diastólica') && (ind.includes('diastólica') || ind.includes('diastolica'))) return true;
+    if (sel.includes('peso') && ind.includes('peso')) return true;
+    return ind.includes(sel);
+  };
 
-  const latestVal = markerData[markerData.length - 1];
+  // Ordenação temporal ascendente para renderizar a evolução cronológica no gráfico
+  const markerData = indicators
+    .filter(i => isMatchForMarker(i.name, selectedMarker))
+    .sort((a, b) => new Date(a.measured_at || a.created_at).getTime() - new Date(b.measured_at || b.created_at).getTime());
+
+  // REGRA CLÍNICA FUNDAMENTAL: O valor em destaque SEMPRE é o mais recente cronologicamente
+  const latestVal = markerData.length > 0 ? markerData[markerData.length - 1] : null;
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,7 +222,7 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
           <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Histórico de Coletas</h3>
           {markerData.length > 0 ? (
             <div className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden text-xs">
-              {markerData.map((d) => (
+              {[...markerData].reverse().map((d) => (
                 <div key={d.id} className="p-3.5 bg-white dark:bg-slate-950 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="text-slate-500 dark:text-slate-400 font-mono">

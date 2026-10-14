@@ -42,16 +42,68 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenExportDossierModal,
   onOpenOnboarding,
 }) => {
-  const activeMeds = medications.filter(m => m.is_active);
-  const recentExams = exams.slice(0, 3);
+  // Isolamento estrito por Membro Familiar selecionado
+  const memberExams = exams.filter(e => {
+    if (!activeMember || activeMember.id === 'fam-me') {
+      return !e.family_member_id || e.family_member_id === 'fam-me';
+    }
+    return e.family_member_id === activeMember.id;
+  });
 
-  // Quick vital indicators (buscados exclusivamente dos dados reais)
-  const glucose = indicators.find(i => i.name.toLowerCase().includes('glic')) || null;
-  const ldl = indicators.find(i => i.name.toLowerCase().includes('colesterol') || i.name.toLowerCase().includes('ldl')) || null;
-  const vitD = indicators.find(i => i.name.toLowerCase().includes('vitamina')) || null;
-  const systolic = indicators.find(i => i.name.toLowerCase().includes('sistólica')) || null;
-  const diastolic = indicators.find(i => i.name.toLowerCase().includes('diastólica')) || null;
-  const bp = indicators.find(i => i.name.toLowerCase().includes('pressão')) || null;
+  const memberIndicators = indicators.filter(i => {
+    if (!activeMember || activeMember.id === 'fam-me') {
+      return !i.family_member_id || i.family_member_id === 'fam-me';
+    }
+    return i.family_member_id === activeMember.id;
+  });
+
+  const activeMeds = medications
+    .filter(m => {
+      if (!activeMember || activeMember.id === 'fam-me') {
+        return !m.family_member_id || m.family_member_id === 'fam-me';
+      }
+      return m.family_member_id === activeMember.id;
+    })
+    .filter(m => m.is_active);
+
+  // REGRA CLÍNICA FUNDAMENTAL: Sempre exibir os exames mais recentes cronologicamente
+  const sortedExams = [...memberExams].sort((a, b) => {
+    const timeA = new Date(a.exam_date || a.created_at || 0).getTime();
+    const timeB = new Date(b.exam_date || b.created_at || 0).getTime();
+    return timeB - timeA;
+  });
+  const recentExams = sortedExams.slice(0, 3);
+
+  // REGRA CLÍNICA FUNDAMENTAL: Sempre buscar a medição MAIS RECENTE no tempo
+  // Se o paciente enviou 5 exames e o 3º teve ótimos resultados, mas o 5º está alterado,
+  // é o 5º (último) que reflete o estado de saúde ATUAL do paciente e deve aparecer no Dashboard.
+  const sortedIndicators = [...memberIndicators].sort((a, b) => {
+    const timeA = new Date(a.measured_at || a.created_at || 0).getTime();
+    const timeB = new Date(b.measured_at || b.created_at || 0).getTime();
+    return timeB - timeA;
+  });
+
+  const getLatestIndicator = (matcher: (name: string) => boolean) => {
+    return sortedIndicators.find(i => matcher(i.name.toLowerCase())) || null;
+  };
+
+  const formatDate = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString.includes('T') ? isoString : `${isoString}T12:00:00Z`);
+      return isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
+    } catch {
+      return '';
+    }
+  };
+
+  const glucose = getLatestIndicator(n => n.includes('glic'));
+  const ldl = getLatestIndicator(n => n.includes('ldl')) || 
+              getLatestIndicator(n => n.includes('colesterol') && !n.includes('hdl') && !n.includes('total'));
+  const vitD = getLatestIndicator(n => n.includes('vitamina') || n.includes('vit d') || n.includes('25-oh'));
+  const systolic = getLatestIndicator(n => n.includes('sistólica') || n.includes('sistolica'));
+  const diastolic = getLatestIndicator(n => n.includes('diastólica') || n.includes('diastolica'));
+  const bp = getLatestIndicator(n => n.includes('pressão') || n.includes('pressao') || n.includes('pa '));
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-200">
@@ -117,15 +169,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
             <span className="text-xs text-slate-500 dark:text-slate-400">{glucose?.unit || 'mg/dL'}</span>
           </div>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center justify-between pt-0.5">
             {glucose ? (
-              <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
-                <CheckCircle2 className="w-3 h-3" /> Nível registrado
-              </span>
+              <>
+                <span className={`flex items-center gap-1 font-semibold ${
+                  glucose.status === 'normal'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-amber-600 dark:text-amber-400'
+                }`}>
+                  {glucose.status === 'normal' ? (
+                    <><CheckCircle2 className="w-3 h-3" /> Normal</>
+                  ) : (
+                    <><AlertCircle className="w-3 h-3" /> Atenção</>
+                  )}
+                </span>
+                <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                  {formatDate(glucose.measured_at)}
+                </span>
+              </>
             ) : (
-              'Sem medição registrada'
+              <span>Sem medição registrada</span>
             )}
-          </span>
+          </div>
         </div>
 
         {/* Colesterol LDL */}
@@ -143,15 +208,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
             <span className="text-xs text-slate-500 dark:text-slate-400">{ldl?.unit || 'mg/dL'}</span>
           </div>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center justify-between pt-0.5">
             {ldl ? (
-              <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
-                <CheckCircle2 className="w-3 h-3" /> Nível registrado
-              </span>
+              <>
+                <span className={`flex items-center gap-1 font-semibold ${
+                  ldl.status === 'normal'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-amber-600 dark:text-amber-400'
+                }`}>
+                  {ldl.status === 'normal' ? (
+                    <><CheckCircle2 className="w-3 h-3" /> Normal</>
+                  ) : (
+                    <><AlertCircle className="w-3 h-3" /> Atenção</>
+                  )}
+                </span>
+                <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                  {formatDate(ldl.measured_at)}
+                </span>
+              </>
             ) : (
-              'Sem medição registrada'
+              <span>Sem medição registrada</span>
             )}
-          </span>
+          </div>
         </div>
 
         {/* Pressão Arterial */}
@@ -169,15 +247,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
             <span className="text-xs text-slate-500 dark:text-slate-400">mmHg</span>
           </div>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center justify-between pt-0.5">
             {systolic || bp ? (
-              <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
-                <CheckCircle2 className="w-3 h-3" /> Nível registrado
-              </span>
+              <>
+                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
+                  <CheckCircle2 className="w-3 h-3" /> Nível registrado
+                </span>
+                <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                  {formatDate(systolic?.measured_at || bp?.measured_at)}
+                </span>
+              </>
             ) : (
-              'Sem medição registrada'
+              <span>Sem medição registrada</span>
             )}
-          </span>
+          </div>
         </div>
 
         {/* Vitamina D */}
@@ -195,15 +278,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
             <span className="text-xs text-slate-500 dark:text-slate-400">{vitD?.unit || 'ng/mL'}</span>
           </div>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center justify-between pt-0.5">
             {vitD ? (
-              <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
-                <CheckCircle2 className="w-3 h-3" /> Nível registrado
-              </span>
+              <>
+                <span className={`flex items-center gap-1 font-semibold ${
+                  vitD.status === 'normal'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-amber-600 dark:text-amber-400'
+                }`}>
+                  {vitD.status === 'normal' ? (
+                    <><CheckCircle2 className="w-3 h-3" /> Normal</>
+                  ) : (
+                    <><AlertCircle className="w-3 h-3" /> Atenção</>
+                  )}
+                </span>
+                <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                  {formatDate(vitD.measured_at)}
+                </span>
+              </>
             ) : (
-              'Sem medição registrada'
+              <span>Sem medição registrada</span>
             )}
-          </span>
+          </div>
         </div>
       </div>
 

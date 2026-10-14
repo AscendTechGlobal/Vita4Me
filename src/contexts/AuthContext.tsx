@@ -12,6 +12,7 @@ interface AuthContextType {
   setIsPasswordRecovery: (value: boolean) => void;
   signInWithEmail: (email: string, password: string) => Promise<{ error: string | null }>;
   signUpWithEmail: (email: string, password: string, fullName?: string) => Promise<{ error: string | null }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<{ error: string | null }>;
   updateUserPassword: (password: string) => Promise<{ error: string | null }>;
@@ -189,6 +190,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error: null };
   };
 
+  const signInWithGoogle = async () => {
+    if (!isSupabaseConfigured) {
+      return { error: "Serviço de autenticação não configurado no ambiente." };
+    }
+    const redirectUrl = `${window.location.origin}/auth/confirm`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: redirectUrl,
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
+      },
+    });
+    if (error) {
+      return { error: error.message || "Não foi possível conectar com o Google." };
+    }
+    return { error: null };
+  };
+
   const signOut = async () => {
     if (isSupabaseConfigured) {
       try {
@@ -212,6 +234,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsPasswordRecovery,
         signInWithEmail,
         signUpWithEmail,
+        signInWithGoogle,
         signOut,
         resetPasswordForEmail,
         updateUserPassword,

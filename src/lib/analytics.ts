@@ -9,6 +9,7 @@ export type AnalyticsEvent =
   | 'signup_started'
   | 'signup_completed'
   | 'login_completed'
+  | 'oauth_initiated'
   | 'onboarding_started'
   | 'onboarding_completed'
   // Ativação

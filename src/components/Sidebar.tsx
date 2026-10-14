@@ -13,6 +13,7 @@ import {
   Crown,
   X
 } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
 
 export type ActiveTab =
   | "overview"
@@ -48,8 +49,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   examsCount,
   medicationsCount,
 }) => {
+  const { profile } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const isSubscribed = profile?.subscription_status === "active";
 
   const navItems: NavItemConfig[] = [
     { id: "overview", label: "Visão Geral 360°", path: "/app", icon: LayoutDashboard },
@@ -151,28 +155,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </nav>
         </div>
 
-        {/* Upgrade Banner in Bottom Sidebar */}
+        {/* Upgrade Banner in Bottom Sidebar (Ocultado quando o usuário já é assinante ativo) */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
-          <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-slate-950 border border-emerald-100 dark:border-slate-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                <Crown className="w-3.5 h-3.5 text-amber-500" />
-                Vita4Me Family
-              </span>
-              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 font-bold">
-                20% OFF
-              </span>
+          {!isSubscribed && (
+            <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-slate-950 border border-emerald-100 dark:border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                  <Crown className="w-3.5 h-3.5 text-amber-500" />
+                  Vita4Me Family
+                </span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 font-bold">
+                  20% OFF
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                Centralize exames e medicamentos de toda a sua família com Assistente de IA incluído.
+              </p>
+              <button
+                onClick={onOpenBillingModal}
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+              >
+                Ver Planos
+              </button>
             </div>
-            <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed">
-              Centralize exames e medicamentos de toda a sua família com Assistente de IA incluído.
-            </p>
-            <button
-              onClick={onOpenBillingModal}
-              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
-            >
-              Ver Planos
-            </button>
-          </div>
+          )}
 
           <div className="flex items-center justify-center gap-2 text-[10px] text-slate-500">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500" />

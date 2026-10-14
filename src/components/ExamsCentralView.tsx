@@ -24,16 +24,19 @@ import {
   Edit3,
   X,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  Users
 } from "lucide-react";
-import { LabExam, FamilyMember } from "../types";
+import { LabExam, FamilyMember, HealthIndicator } from "../types";
 import { getAuthHeaders } from "../lib/apiClient";
-import { saveExam, deleteExam } from "../lib/healthStorage";
+import { saveExam, deleteExam, saveIndicator } from "../lib/healthStorage";
 import { trackEvent, trackAiUsage } from "../lib/analytics";
 
 interface ExamsCentralViewProps {
   exams: LabExam[];
   activeMember: FamilyMember | null;
+  familyMembers?: FamilyMember[];
+  onSelectFamilyMember?: (memberId: string) => void;
   onRefreshExams: () => void;
   onBack: () => void;
 }
@@ -43,11 +46,15 @@ type AddModalMode = "upload" | "review" | "manual";
 export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
   exams,
   activeMember,
+  familyMembers = [],
+  onSelectFamilyMember,
   onRefreshExams,
   onBack,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("Todas");
+  const [selectedMemberFilter, setSelectedMemberFilter] = useState<string>("all");
+  const [targetMemberId, setTargetMemberId] = useState<string>(activeMember?.id || "fam-me");
   const [selectedExam, setSelectedExam] = useState<LabExam | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addMode, setAddMode] = useState<AddModalMode>("upload");
@@ -89,15 +96,53 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
 
   const categories = ["Todas", "Laboratorial", "Imagem", "Cardiológico", "Genético", "Outro"];
 
-  const filteredExams = exams.filter(e => {
-    const matchesCategory = selectedCategory === "Todas" || e.category === selectedCategory;
-    const term = searchTerm.toLowerCase();
-    const matchesSearch = 
-      e.title.toLowerCase().includes(term) ||
-      (e.laboratory || '').toLowerCase().includes(term) ||
-      (e.doctor_name || '').toLowerCase().includes(term);
-    return matchesCategory && matchesSearch;
-  });
+  // Sincronizar o membro selecionado ao alternar no Navbar
+  React.useEffect(() => {
+    if (activeMember?.id) {
+      setTargetMemberId(activeMember.id);
+    }
+  }, [activeMember?.id]);
+
+  const getMemberInfo = (familyMemberId?: string | null) => {
+    if (!familyMemberId || familyMemberId === "fam-me") {
+      const titular = familyMembers.find(m => m.id === "fam-me" || m.relationship === "Titular");
+      return { name: titular?.name || "Titular (Você)", relationship: "Titular", isTitular: true };
+    }
+    const member = familyMembers.find(m => m.id === familyMemberId);
+    if (member) {
+      return { name: member.name, relationship: member.relationship, isTitular: false };
+    }
+    return { name: "Titular", relationship: "Titular", isTitular: true };
+  };
+
+  const filteredExams = exams
+    .filter(e => {
+      // 1. Filtro Multi-Familiar
+      if (selectedMemberFilter !== "all") {
+        if (selectedMemberFilter === "fam-me") {
+          if (e.family_member_id && e.family_member_id !== "fam-me") return false;
+        } else {
+          if (e.family_member_id !== selectedMemberFilter) return false;
+        }
+      }
+
+      // 2. Filtro de Categoria
+      const matchesCategory = selectedCategory === "Todas" || e.category === selectedCategory;
+
+      // 3. Termo de Busca
+      const term = searchTerm.toLowerCase();
+      const matchesSearch = 
+        e.title.toLowerCase().includes(term) ||
+        (e.laboratory || '').toLowerCase().includes(term) ||
+        (e.doctor_name || '').toLowerCase().includes(term);
+
+      return matchesCategory && matchesSearch;
+    })
+    .sort((a, b) => {
+      const timeA = new Date(a.exam_date || a.created_at || 0).getTime();
+      const timeB = new Date(b.exam_date || b.created_at || 0).getTime();
+      return timeB - timeA;
+    });
 
   const resetForm = () => {
     setTitle("");
@@ -112,10 +157,12 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
     setFileMetadata(null);
     setModalError(null);
     setAddMode("upload");
+    setTargetMemberId(activeMember?.id || "fam-me");
   };
 
   const handleOpenAddModal = () => {
     resetForm();
+    setTargetMemberId(activeMember?.id || "fam-me");
     setShowAddModal(true);
   };
 
@@ -247,10 +294,12 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
       return;
     }
 
+    const resolvedFamilyMemberId = (targetMemberId && targetMemberId !== "fam-me") ? targetMemberId : null;
+
     const newExam: LabExam = {
       id: "exam-" + Date.now(),
       user_id: "usr-default",
-      family_member_id: activeMember?.id || null,
+      family_member_id: resolvedFamilyMemberId,
       title: title.trim(),
       category,
       exam_date: examDate,
@@ -266,10 +315,123 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
     };
 
     saveExam(newExam);
+
+    // Sincronizar automaticamente os biomarcadores encontrados com os Indicadores de Saúde (Glicose, Colesterol, Vitamina D, etc.)
+    const getIndicatorCategory = (paramName: string): HealthIndicator['category'] => {
+      const lower = paramName.toLowerCase();
+      if (lower.includes('glic') || lower.includes('insul') || lower.includes('ureia') || lower.includes('creat') || lower.includes('hba1c') || lower.includes('glicad')) return 'Metabólico';
+      if (lower.includes('colest') || lower.includes('hdl') || lower.includes('ldl') || lower.includes('triglic') || lower.includes('lipid')) return 'Lipídico';
+      if (lower.includes('vitam') || lower.includes('ferritin') || lower.includes('ferro') || lower.includes('b12')) return 'Vitaminas';
+      if (lower.includes('tsh') || lower.includes('t3') || lower.includes('t4') || lower.includes('hormon') || lower.includes('testost') || lower.includes('cortisol')) return 'Hormonal';
+      return 'Vital';
+    };
+
+    const mapFindingStatus = (st: 'normal' | 'altered' | 'attention'): HealthIndicator['status'] => {
+      if (st === 'normal') return 'normal';
+      if (st === 'attention') return 'borderline';
+      return 'high';
+    };
+
+    const toSafeIsoDate = (d?: string) => {
+      if (!d) return new Date().toISOString();
+      if (d.includes('/')) {
+        const parts = d.split('/');
+        if (parts.length === 3) {
+          const [day, month, year] = parts;
+          return new Date(`${year}-${month}-${day}T12:00:00Z`).toISOString();
+        }
+      }
+      const dt = new Date(d.includes('T') ? d : `${d}T12:00:00Z`);
+      return isNaN(dt.getTime()) ? new Date().toISOString() : dt.toISOString();
+    };
+
+    if (Array.isArray(keyFindings) && keyFindings.length > 0) {
+      for (const finding of keyFindings) {
+        if (!finding.parameter || !finding.value) continue;
+
+        const valStr = finding.value.toString();
+        const numMatch = valStr.match(/([\d.,]+)\s*([a-zA-Z/%³\-_]+)?/);
+        const numVal = numMatch ? parseFloat(numMatch[1].replace(',', '.')) : 0;
+        const unit = numMatch?.[2] || "";
+
+        saveIndicator({
+          id: "ind-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+          user_id: "usr-default",
+          family_member_id: resolvedFamilyMemberId,
+          name: finding.parameter,
+          category: getIndicatorCategory(finding.parameter),
+          value: isNaN(numVal) ? 0 : numVal,
+          unit: unit,
+          status: mapFindingStatus(finding.status),
+          measured_at: toSafeIsoDate(examDate),
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
+
     trackEvent('exam_created', { category, has_file: Boolean(fileMetadata) });
     onRefreshExams();
     setShowAddModal(false);
     resetForm();
+  };
+
+  const handleSyncExamToIndicators = (exam: LabExam) => {
+    if (!exam.ai_key_findings || exam.ai_key_findings.length === 0) return;
+
+    const toSafeIsoDate = (d?: string) => {
+      if (!d) return new Date().toISOString();
+      if (d.includes('/')) {
+        const parts = d.split('/');
+        if (parts.length === 3) {
+          const [day, month, year] = parts;
+          return new Date(`${year}-${month}-${day}T12:00:00Z`).toISOString();
+        }
+      }
+      const dt = new Date(d.includes('T') ? d : `${d}T12:00:00Z`);
+      return isNaN(dt.getTime()) ? new Date().toISOString() : dt.toISOString();
+    };
+
+    const getIndicatorCategory = (paramName: string): HealthIndicator['category'] => {
+      const lower = paramName.toLowerCase();
+      if (lower.includes('glic') || lower.includes('insul') || lower.includes('ureia') || lower.includes('creat') || lower.includes('hba1c') || lower.includes('glicad')) return 'Metabólico';
+      if (lower.includes('colest') || lower.includes('hdl') || lower.includes('ldl') || lower.includes('triglic') || lower.includes('lipid')) return 'Lipídico';
+      if (lower.includes('vitam') || lower.includes('ferritin') || lower.includes('ferro') || lower.includes('b12')) return 'Vitaminas';
+      if (lower.includes('tsh') || lower.includes('t3') || lower.includes('t4') || lower.includes('hormon') || lower.includes('testost') || lower.includes('cortisol')) return 'Hormonal';
+      return 'Vital';
+    };
+
+    const mapFindingStatus = (st: 'normal' | 'altered' | 'attention'): HealthIndicator['status'] => {
+      if (st === 'normal') return 'normal';
+      if (st === 'attention') return 'borderline';
+      return 'high';
+    };
+
+    const examMemberId = (exam.family_member_id && exam.family_member_id !== "fam-me") ? exam.family_member_id : null;
+
+    for (const finding of exam.ai_key_findings) {
+      if (!finding.parameter || !finding.value) continue;
+
+      const valStr = finding.value.toString();
+      const numMatch = valStr.match(/([\d.,]+)\s*([a-zA-Z/%³\-_]+)?/);
+      const numVal = numMatch ? parseFloat(numMatch[1].replace(',', '.')) : 0;
+      const unit = numMatch?.[2] || "";
+
+      saveIndicator({
+        id: "ind-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+        user_id: "usr-default",
+        family_member_id: examMemberId,
+        name: finding.parameter,
+        category: getIndicatorCategory(finding.parameter),
+        value: isNaN(numVal) ? 0 : numVal,
+        unit: unit,
+        status: mapFindingStatus(finding.status),
+        measured_at: toSafeIsoDate(exam.exam_date),
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    onRefreshExams();
+    alert("Biomarcadores sincronizados com sucesso no Painel de Indicadores!");
   };
 
   const handleViewOriginalFile = async (storagePath?: string, examId?: string) => {
@@ -357,34 +519,82 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row gap-4 justify-between items-center shadow-xs">
-        <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Buscar por título, laboratório ou médico..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition"
-          />
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl flex flex-col gap-3 shadow-xs">
+        <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+          <div className="relative w-full md:w-80">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar por título, laboratório ou médico..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition"
+            />
+          </div>
+
+          {/* Category Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                  selectedCategory === cat
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : "bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Category Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
-          {categories.map((cat) => (
+        {/* Multi-Family Member Filter Pills */}
+        {familyMembers.length > 1 && (
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 overflow-x-auto">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1 shrink-0">
+              <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Filtrar por Prontuário:</span>
+            </span>
+
             <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-                selectedCategory === cat
+              onClick={() => setSelectedMemberFilter("all")}
+              className={`px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                selectedMemberFilter === "all"
                   ? "bg-emerald-600 text-white shadow-xs"
                   : "bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800"
               }`}
             >
-              {cat}
+              Todos da Família ({exams.length})
             </button>
-          ))}
-        </div>
+
+            {familyMembers.map((m) => {
+              const count = exams.filter((e) => {
+                if (m.id === "fam-me") return !e.family_member_id || e.family_member_id === "fam-me";
+                return e.family_member_id === m.id;
+              }).length;
+
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    setSelectedMemberFilter(m.id);
+                    if (onSelectFamilyMember) onSelectFamilyMember(m.id);
+                  }}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
+                    selectedMemberFilter === m.id
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800"
+                  }`}
+                >
+                  <span>{m.name}</span>
+                  <span className="text-[10px] opacity-80 font-mono">({count})</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Exams Grid */}
@@ -396,9 +606,17 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
           >
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] font-mono font-bold uppercase">
-                  {exam.category}
-                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] font-mono font-bold uppercase">
+                    {exam.category}
+                  </span>
+                  {familyMembers.length > 1 && (
+                    <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-semibold flex items-center gap-1 border border-slate-200 dark:border-slate-700">
+                      <User className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                      <span>{getMemberInfo(exam.family_member_id).name}</span>
+                    </span>
+                  )}
+                </div>
                 <span className="text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5" /> {exam.exam_date}
                 </span>
@@ -580,6 +798,34 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Modal Actions Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                onClick={() => handleDelete(selectedExam.id)}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+              >
+                Excluir Exame
+              </button>
+
+              <div className="flex items-center gap-2">
+                {selectedExam.ai_key_findings && selectedExam.ai_key_findings.length > 0 && (
+                  <button
+                    onClick={() => handleSyncExamToIndicators(selectedExam)}
+                    className="px-3.5 py-2 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs rounded-xl border border-emerald-200 dark:border-emerald-800 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Activity className="w-3.5 h-3.5" />
+                    <span>Sincronizar no Painel 360°</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedExam(null)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-semibold text-xs rounded-xl transition cursor-pointer"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -733,6 +979,36 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
                     <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 text-[10px] font-bold shrink-0">
                       Arquivo Vinculado
                     </span>
+                  </div>
+                )}
+
+                {/* Seletor de Membro Familiar / Prontuário */}
+                {familyMembers && familyMembers.length > 1 && (
+                  <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="block text-xs font-bold text-slate-900 dark:text-white">
+                          Vincular ao Prontuário Familiar
+                        </span>
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                          Selecione o membro que realizou este exame:
+                        </span>
+                      </div>
+                    </div>
+                    <select
+                      value={targetMemberId}
+                      onChange={(e) => setTargetMemberId(e.target.value)}
+                      className="bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                    >
+                      {familyMembers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.relationship})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 )}
 
@@ -899,6 +1175,36 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
             {/* ── ESTADO 3: CADASTRO MANUAL DE EXAME ── */}
             {addMode === "manual" && (
               <form onSubmit={handleSaveConfirmedExam} className="space-y-4 text-xs">
+                {/* Seletor de Membro Familiar / Prontuário */}
+                {familyMembers && familyMembers.length > 1 && (
+                  <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="block text-xs font-bold text-slate-900 dark:text-white">
+                          Vincular ao Prontuário Familiar
+                        </span>
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                          Selecione o membro que realizou este exame:
+                        </span>
+                      </div>
+                    </div>
+                    <select
+                      value={targetMemberId}
+                      onChange={(e) => setTargetMemberId(e.target.value)}
+                      className="bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                    >
+                      {familyMembers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.relationship})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Título do Exame *</label>
                   <input

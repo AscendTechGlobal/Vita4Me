@@ -9,6 +9,8 @@ export interface UserProfile {
   id: string;
   email: string;
   full_name: string | null;
+  avatar_url?: string | null;
+  phone?: string | null;
   date_of_birth?: string | null;
   blood_type?: string | null;
   gender?: string | null;
@@ -27,6 +29,9 @@ export interface UserProfile {
   trial_ends_at?: string | null;
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
+  billing_provider?: 'asaas' | 'stripe' | 'free' | null;
+  billing_customer_id?: string | null;
+  billing_subscription_id?: string | null;
   ai_credits?: number;
   onboarding_completed?: boolean;
   created_at: string;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { Navbar } from "../components/Navbar";
 import { Sidebar } from "../components/Sidebar";
@@ -14,6 +15,7 @@ import {
   setActiveFamilyMemberId,
   saveFamilyMember,
   deleteFamilyMember,
+  syncAllFromSupabase,
 } from "../lib/healthStorage";
 import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from "../types";
 import { trackEvent, trackPageView } from "../lib/analytics";
@@ -72,6 +74,13 @@ export const AppLayout: React.FC = () => {
   useEffect(() => {
     refreshAllData();
 
+    // Hidratação assíncrona do Supabase ao autenticar
+    if (user) {
+      syncAllFromSupabase().then((synced) => {
+        if (synced) refreshAllData();
+      });
+    }
+
     // Detecção segura de retorno de Checkout com Sucesso
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get("checkout_success") === "true") {
@@ -83,7 +92,7 @@ export const AppLayout: React.FC = () => {
         trackEvent("subscription_activated", { plan_tier: plan });
       }
     }
-  }, []);
+  }, [user]);
 
   // Transição reativa e disparo de Anamnese Inicial quando profile for comprovadamente onboarding_completed = false
   useEffect(() => {
@@ -93,7 +102,33 @@ export const AppLayout: React.FC = () => {
     }
   }, [user, profile, authLoading]);
 
-  const activeMember = familyMembers.find(f => f.id === activeMemberId) || familyMembers[0] || null;
+  // Titular estruturado garantido como primeiro membro do prontuário
+  const titularMember: FamilyMember = {
+    id: "fam-me",
+    user_id: user?.id || "usr-current",
+    name: profile?.full_name || user?.email?.split('@')[0] || "Titular (Você)",
+    relationship: "Titular",
+    date_of_birth: profile?.date_of_birth || undefined,
+    gender: profile?.gender || undefined,
+    blood_type: profile?.blood_type || undefined,
+    height_cm: profile?.height_cm || undefined,
+    weight_kg: profile?.weight_kg || undefined,
+    smoking_status: profile?.smoking_status || undefined,
+    alcohol_status: profile?.alcohol_status || undefined,
+    activity_level: profile?.activity_level || undefined,
+    chronic_conditions: profile?.chronic_conditions || [],
+    allergies: profile?.allergies || [],
+    is_active: true,
+    onboarding_completed: profile?.onboarding_completed ?? true,
+    created_at: profile?.created_at || new Date().toISOString(),
+  };
+
+  const allMembers: FamilyMember[] = [
+    titularMember,
+    ...familyMembers.filter(m => m.id !== "fam-me" && m.relationship !== "Titular")
+  ];
+
+  const activeMember = allMembers.find(f => f.id === activeMemberId) || titularMember;
 
   const handleSelectFamilyMember = (id: string) => {
     setActiveFamilyMemberId(id);
@@ -102,7 +137,7 @@ export const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-[#7AC943] selection:text-[#0A3B2E]">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-white dark:selection:bg-[#1DB954] dark:selection:text-black">
       <Navbar
         onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
         activeMember={activeMember}
@@ -123,10 +158,31 @@ export const AppLayout: React.FC = () => {
         />
 
         <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-950">
+          {/* Alerta de Dunning / Inadimplência (past_due) */}
+          {profile?.subscription_status === 'past_due' && (
+            <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200 sticky top-0 z-30 backdrop-blur-xs shadow-xs animate-in slide-in-from-top-2">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>
+                  <strong>Renovação Pendente:</strong> A sua mensalidade mais recente não foi confirmada. Regularize seu pagamento via Pix ou Cartão para evitar a interrupção das análises por inteligência artificial.
+                </span>
+              </div>
+              <button
+                onClick={() => setIsBillingModalOpen(true)}
+                className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs whitespace-nowrap transition cursor-pointer flex items-center justify-center gap-1.5 shrink-0 shadow-xs"
+              >
+                <span>Regularizar Agora</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           <Suspense fallback={<LoadingSpinner />}>
             <Outlet
               context={{
                 activeMember,
+                familyMembers: allMembers,
+                onSelectFamilyMember: handleSelectFamilyMember,
                 exams,
                 indicators,
                 medications,
@@ -168,7 +224,7 @@ export const AppLayout: React.FC = () => {
           <FamilyProfilesModal
             isOpen={isFamilyModalOpen}
             onClose={() => setIsFamilyModalOpen(false)}
-            members={familyMembers}
+            members={allMembers}
             activeMemberId={activeMemberId}
             onSelectMember={handleSelectFamilyMember}
             onAddMember={(newM) => {
@@ -177,6 +233,9 @@ export const AppLayout: React.FC = () => {
             }}
             onDeleteMember={(id) => {
               deleteFamilyMember(id);
+              if (activeMemberId === id) {
+                handleSelectFamilyMember("fam-me");
+              }
               refreshAllData();
             }}
           />

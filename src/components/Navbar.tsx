@@ -55,8 +55,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs text-slate-800 dark:text-white transition cursor-pointer group shadow-xs"
             title="Alternar perfil familiar"
           >
-            <div className="w-6 h-6 rounded-full bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 font-bold flex items-center justify-center text-[10px]">
-              {activeMember?.name?.charAt(0) || profile?.full_name?.charAt(0) || 'P'}
+            <div className="w-6 h-6 rounded-full bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 font-bold flex items-center justify-center text-[10px] overflow-hidden">
+              {profile?.avatar_url || user?.user_metadata?.avatar_url ? (
+                <img src={profile?.avatar_url || user?.user_metadata?.avatar_url} alt="Foto" className="w-full h-full object-cover" />
+              ) : (
+                activeMember?.name?.charAt(0) || profile?.full_name?.charAt(0) || 'P'
+              )}
             </div>
             <div className="text-left">
               <span className="block font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition leading-tight">
@@ -70,8 +74,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         ) : (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white shadow-xs">
-            <div className="w-6 h-6 rounded-full bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 font-bold flex items-center justify-center text-[10px]">
-              {profile?.full_name?.charAt(0) || user?.email?.charAt(0)?.toUpperCase() || 'T'}
+            <div className="w-6 h-6 rounded-full bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 font-bold flex items-center justify-center text-[10px] overflow-hidden">
+              {profile?.avatar_url || user?.user_metadata?.avatar_url ? (
+                <img src={profile?.avatar_url || user?.user_metadata?.avatar_url} alt="Foto" className="w-full h-full object-cover" />
+              ) : (
+                profile?.full_name?.charAt(0) || user?.email?.charAt(0)?.toUpperCase() || 'T'
+              )}
             </div>
             <div className="text-left">
               <span className="block font-bold text-slate-800 dark:text-slate-200 leading-tight">
