@@ -16,6 +16,13 @@ RUN npm ci --include=optional
 # Copiar o código-fonte do projeto
 COPY . .
 
+# Argumentos de build para o Vite empacotar o cliente Supabase no bundle frontend
+ARG VITE_SUPABASE_URL=https://jbvcikmrunxlqjbhnhkx.supabase.co
+ARG VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpidmNpa21ydW54bHFqYmhuaGt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MzIyNzAsImV4cCI6MjEwMjMwODI3MH0.6yPAhEfcptH_e9AQ7bX9KVncyg7qt_8SEAAlYYppFLQ
+
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
 # Compilar TypeScript, Vite SPA e bundle do servidor Node.js
 RUN npm run build
 
