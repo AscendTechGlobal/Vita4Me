@@ -2020,7 +2020,11 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.resolve(process.cwd(), "dist");
+    const rootDir = process.cwd();
+    const distPath = path.resolve(rootDir, "dist");
+    const publicPath = path.resolve(rootDir, "public");
+
+    // 1. Servir /assets com cache longo e headers cross-origin
     app.use(
       "/assets",
       express.static(path.resolve(distPath, "assets"), {
@@ -2032,6 +2036,8 @@ async function startServer() {
         },
       })
     );
+
+    // 2. Servir a pasta dist (onde o Vite compila assets, index.html, etc.)
     app.use(
       express.static(distPath, {
         maxAge: "1h",
@@ -2040,7 +2046,26 @@ async function startServer() {
         },
       })
     );
+
+    // 3. Servir arquivos da pasta public como contingência caso não estejam em dist
+    if (fs.existsSync(publicPath)) {
+      app.use(
+        express.static(publicPath, {
+          maxAge: "1h",
+          setHeaders: (res) => {
+            res.setHeader("Access-Control-Allow-Origin", "*");
+          },
+        })
+      );
+    }
+
+    // 4. Fallback para rotas do SPA (React Router)
+    // Se a requisição pediu um asset ou arquivo estático que não existe, retorne 404
+    // Isso impede que arquivos .js/.css inexistentes recebam index.html ou gerem erros de MIME type
     app.get("*", (req, res) => {
+      if (req.path.startsWith("/assets/") || req.path.includes(".")) {
+        return res.status(404).type("text/plain").send("Not Found");
+      }
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.sendFile(path.resolve(distPath, "index.html"));
     });
