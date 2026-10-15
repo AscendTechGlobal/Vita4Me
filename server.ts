@@ -20,6 +20,7 @@ dotenv.config();
 
 const app = express();
 app.set("trust proxy", 1);
+app.disable("x-powered-by");
 const PORT = Number(process.env.PORT) || 3000;
 const isCompiled = (typeof __filename !== "undefined" && __filename.includes("dist")) || (process.argv[1] ? process.argv[1].includes("dist") : false);
 const IS_PROD =
@@ -506,7 +507,14 @@ const aiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use("/api/health", generalLimiter);
+// Aplica Rate Limiter Geral em todas as rotas /api (exceto webhooks externos de pagamento)
+app.use("/api/", (req: Request, res: Response, next: NextFunction) => {
+  if (req.path.startsWith("/stripe/webhook") || req.path.startsWith("/webhooks/")) {
+    return next();
+  }
+  return generalLimiter(req, res, next);
+});
+
 app.use("/api/stripe/create-checkout", stripeLimiter);
 app.use("/api/ai/*", aiLimiter);
 app.use("/api/gemini/*", aiLimiter);
