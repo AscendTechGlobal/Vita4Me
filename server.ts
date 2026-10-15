@@ -178,19 +178,27 @@ const isAllowedOrigin = (origin?: string): boolean => {
   }
 };
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (isAllowedOrigin(origin)) {
-        callback(null, true);
-      } else {
-        // Bloqueia CORS omitindo o header Access-Control-Allow-Origin sem estourar Erro 500 fatal no Express
-        callback(null, false);
-      }
-    },
-    credentials: true,
-  })
-);
+const corsMiddleware = cors({
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+    } else {
+      // Bloqueia CORS omitindo o header Access-Control-Allow-Origin sem estourar Erro 500 fatal no Express
+      callback(null, false);
+    }
+  },
+  credentials: true,
+});
+
+// Recursos estáticos (/assets, imagens, css, js) possuem acesso livre e nunca são bloqueados por CORS
+app.use((req, res, next) => {
+  if (req.path.startsWith("/assets/") || req.path.includes(".")) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    return next();
+  }
+  return corsMiddleware(req, res, next);
+});
 
 // ==============================================================================
 // 4.1 REQUEST ID & STRUCTURED ACCESS LOGGING (ZERO PII / ZERO MEDICAL DATA)
