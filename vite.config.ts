@@ -45,6 +45,7 @@ export default defineConfig(() => {
         'vita4me-production.up.railway.app',
         'vita4me.app',
         'www.vita4me.app',
+        '.run.app',
       ],
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
@@ -54,6 +55,7 @@ export default defineConfig(() => {
         'vita4me-production.up.railway.app',
         'vita4me.app',
         'www.vita4me.app',
+        '.run.app',
       ],
     },
   };

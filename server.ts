@@ -19,12 +19,14 @@ import { billingService } from "./src/server/billing/billingService.js";
 dotenv.config();
 
 const app = express();
+app.set("trust proxy", 1);
 const PORT = Number(process.env.PORT) || 3000;
 const isCompiled = (typeof __filename !== "undefined" && __filename.includes("dist")) || (process.argv[1] ? process.argv[1].includes("dist") : false);
 const IS_PROD =
   process.env.NODE_ENV === "production" ||
   Boolean(process.env.RAILWAY_ENVIRONMENT) ||
   Boolean(process.env.RAILWAY_PROJECT_ID) ||
+  Boolean(process.env.K_SERVICE) ||
   isCompiled ||
   process.env.NODE_ENV !== "development";
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
@@ -136,25 +138,54 @@ app.use(
   })
 );
 
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:5173",
-  "https://vita4me-production.up.railway.app",
-  "https://vita4me.app",
-  "https://www.vita4me.app",
-  APP_URL,
-].filter(Boolean);
+const isAllowedOrigin = (origin?: string): boolean => {
+  // Permite requisições sem header Origin (navegação direta do navegador, apps móveis, curl, server-to-server)
+  if (!origin) return true;
+  if (!IS_PROD) return true;
+
+  try {
+    const parsed = new URL(origin);
+    const host = parsed.hostname.toLowerCase();
+
+    // Localhost / Loopback de desenvolvimento
+    if (host === "localhost" || host === "127.0.0.1") return true;
+
+    // Domínios Vita4Me de produção
+    if (host === "vita4me.app" || host.endsWith(".vita4me.app")) return true;
+
+    // Google Cloud Run (*.run.app)
+    if (host.endsWith(".run.app")) return true;
+
+    // Railway (*.railway.app)
+    if (host.endsWith(".railway.app")) return true;
+
+    // Vercel (*.vercel.app)
+    if (host.endsWith(".vercel.app")) return true;
+
+    // APP_URL explícita do ambiente se definida
+    if (APP_URL) {
+      try {
+        const appUrlHost = new URL(APP_URL).hostname.toLowerCase();
+        if (host === appUrlHost) return true;
+      } catch {
+        // Ignora URL malformada na variável de ambiente
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+};
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Permite requisições sem origin (como apps móveis, curl ou server-to-server)
-      if (!origin || allowedOrigins.includes(origin) || !IS_PROD) {
+      if (isAllowedOrigin(origin)) {
         callback(null, true);
       } else {
-        callback(new Error("Bloqueado pela política CORS do Vita4Me."));
+        // Bloqueia CORS omitindo o header Access-Control-Allow-Origin sem estourar Erro 500 fatal no Express
+        callback(null, false);
       }
     },
     credentials: true,
@@ -1978,29 +2009,6 @@ app.post("/api/email/test", requireAuth, async (req: AuthenticatedRequest, res: 
 });
 
 // ==============================================================================
-// 8.1 GLOBAL ERROR HANDLER (SANITIZED • ZERO STACK TRACE LEAK)
-// ==============================================================================
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  const requestId = (req as any).requestId || "unknown";
-  console.error(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: "ERROR",
-      request_id: requestId,
-      method: req.method,
-      route: req.path,
-      service: "vita4me_api_unhandled",
-      error_message: err.message || "Erro desconhecido",
-    })
-  );
-
-  res.status(err.status || 500).json({
-    error: "Erro interno no processamento da requisição.",
-    requestId,
-  });
-});
-
-// ==============================================================================
 // 9. VITE SPA HOSTING & STATIC SERVER
 // ==============================================================================
 async function startServer() {
@@ -2018,14 +2026,49 @@ async function startServer() {
       express.static(path.resolve(distPath, "assets"), {
         maxAge: "1y",
         immutable: true,
+        setHeaders: (res) => {
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+        },
       })
     );
-    app.use(express.static(distPath, { maxAge: "1h" }));
+    app.use(
+      express.static(distPath, {
+        maxAge: "1h",
+        setHeaders: (res) => {
+          res.setHeader("Access-Control-Allow-Origin", "*");
+        },
+      })
+    );
     app.get("*", (req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.sendFile(path.resolve(distPath, "index.html"));
     });
   }
+
+  // ==============================================================================
+  // 9.1 GLOBAL ERROR HANDLER (SANITIZED • ZERO STACK TRACE LEAK)
+  // Registrado no final do pipeline para capturar qualquer erro não tratado
+  // ==============================================================================
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+    const requestId = (req as any).requestId || "unknown";
+    console.error(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: "ERROR",
+        request_id: requestId,
+        method: req.method,
+        route: req.path,
+        service: "vita4me_api_unhandled",
+        error_message: err.message || "Erro desconhecido",
+      })
+    );
+
+    res.status(err.status || 500).json({
+      error: "Erro interno no processamento da requisição.",
+      requestId,
+    });
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`🌿 Vita4Me Hardened Server rodando com sucesso em http://0.0.0.0:${PORT} [Modo: ${IS_PROD ? "PRODUÇÃO" : "DESENVOLVIMENTO"}]`);
