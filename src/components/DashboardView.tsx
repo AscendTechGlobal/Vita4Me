@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from "../types";
 import { ActiveTab } from "./Sidebar";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface DashboardViewProps {
   activeMember: FamilyMember | null;
@@ -42,6 +43,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenExportDossierModal,
   onOpenOnboarding,
 }) => {
+  const { dictionary, language } = useLanguage();
+  const d = dictionary.dashboard;
+  const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
+
   // Isolamento estrito por Membro Familiar selecionado
   const memberExams = exams.filter(e => {
     if (!activeMember || activeMember.id === 'fam-me') {
@@ -75,8 +80,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const recentExams = sortedExams.slice(0, 3);
 
   // REGRA CLÍNICA FUNDAMENTAL: Sempre buscar a medição MAIS RECENTE no tempo
-  // Se o paciente enviou 5 exames e o 3º teve ótimos resultados, mas o 5º está alterado,
-  // é o 5º (último) que reflete o estado de saúde ATUAL do paciente e deve aparecer no Dashboard.
   const sortedIndicators = [...memberIndicators].sort((a, b) => {
     const timeA = new Date(a.measured_at || a.created_at || 0).getTime();
     const timeB = new Date(b.measured_at || b.created_at || 0).getTime();
@@ -90,8 +93,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const formatDate = (isoString?: string) => {
     if (!isoString) return '';
     try {
-      const d = new Date(isoString.includes('T') ? isoString : `${isoString}T12:00:00Z`);
-      return isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
+      const dateObj = new Date(isoString.includes('T') ? isoString : `${isoString}T12:00:00Z`);
+      return isNaN(dateObj.getTime()) ? '' : dateObj.toLocaleDateString(localeStr);
     } catch {
       return '';
     }
@@ -113,13 +116,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="space-y-2 max-w-xl">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-mono">
               <Activity className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-              Prontuário Médico Digital &bull; {activeMember?.name || 'Titular'}
+              {d.digitalRecordBadge} &bull; {activeMember?.name || d.primaryHolder}
             </div>
             <h1 className="text-2xl md:text-3xl font-black text-slate-950 dark:text-white tracking-tight">
-              Sua saúde centralizada e explicada com clareza
+              {d.heroTitle}
             </h1>
             <p className="text-xs md:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-              Acompanhe laudos laboratoriais, indicadores vitais, receitas e sua linha do tempo médica contínua em um ambiente 100% seguro.
+              {d.heroSubtitle}
             </p>
           </div>
 
@@ -129,7 +132,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={onOpenOnboarding}
                 className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition cursor-pointer"
               >
-                <span>📋 Anamnese Inicial</span>
+                <span>{d.initialAnamnesis}</span>
               </button>
             )}
 
@@ -138,7 +141,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition cursor-pointer"
             >
               <Download className="w-4 h-4" />
-              <span>Dossiê PDF</span>
+              <span>{d.dossierPdf}</span>
             </button>
 
             <button
@@ -146,7 +149,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs rounded-xl flex items-center gap-2 transition cursor-pointer shadow-xs"
             >
               <Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Assistente Clínico</span>
+              <span>{d.clinicalAssistant}</span>
             </button>
           </div>
         </div>
@@ -160,7 +163,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 p-5 rounded-2xl space-y-2 transition cursor-pointer group shadow-xs"
         >
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Glicemia de Jejum</span>
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{d.fastingGlucose}</span>
             <Activity className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition" />
           </div>
           <div className="flex items-baseline gap-1.5">
@@ -178,9 +181,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     : 'text-amber-600 dark:text-amber-400'
                 }`}>
                   {glucose.status === 'normal' ? (
-                    <><CheckCircle2 className="w-3 h-3" /> Normal</>
+                    <><CheckCircle2 className="w-3 h-3" /> {d.normal}</>
                   ) : (
-                    <><AlertCircle className="w-3 h-3" /> Atenção</>
+                    <><AlertCircle className="w-3 h-3" /> {d.attention}</>
                   )}
                 </span>
                 <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
@@ -188,7 +191,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </span>
               </>
             ) : (
-              <span>Sem medição registrada</span>
+              <span>{d.noMeasurement}</span>
             )}
           </div>
         </div>
@@ -199,7 +202,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 p-5 rounded-2xl space-y-2 transition cursor-pointer group shadow-xs"
         >
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Colesterol LDL</span>
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{d.ldlCholesterol}</span>
             <Heart className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition" />
           </div>
           <div className="flex items-baseline gap-1.5">
@@ -217,9 +220,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     : 'text-amber-600 dark:text-amber-400'
                 }`}>
                   {ldl.status === 'normal' ? (
-                    <><CheckCircle2 className="w-3 h-3" /> Normal</>
+                    <><CheckCircle2 className="w-3 h-3" /> {d.normal}</>
                   ) : (
-                    <><AlertCircle className="w-3 h-3" /> Atenção</>
+                    <><AlertCircle className="w-3 h-3" /> {d.attention}</>
                   )}
                 </span>
                 <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
@@ -227,7 +230,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </span>
               </>
             ) : (
-              <span>Sem medição registrada</span>
+              <span>{d.noMeasurement}</span>
             )}
           </div>
         </div>
@@ -238,7 +241,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 p-5 rounded-2xl space-y-2 transition cursor-pointer group shadow-xs"
         >
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Pressão Arterial</span>
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{d.bloodPressure}</span>
             <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition" />
           </div>
           <div className="flex items-baseline gap-1.5">
@@ -251,14 +254,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {systolic || bp ? (
               <>
                 <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
-                  <CheckCircle2 className="w-3 h-3" /> Nível registrado
+                  <CheckCircle2 className="w-3 h-3" /> {d.recordedLevel}
                 </span>
                 <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
                   {formatDate(systolic?.measured_at || bp?.measured_at)}
                 </span>
               </>
             ) : (
-              <span>Sem medição registrada</span>
+              <span>{d.noMeasurement}</span>
             )}
           </div>
         </div>
@@ -269,7 +272,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 p-5 rounded-2xl space-y-2 transition cursor-pointer group shadow-xs"
         >
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Vitamina D (25-OH)</span>
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{d.vitaminD}</span>
             <Activity className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition" />
           </div>
           <div className="flex items-baseline gap-1.5">
@@ -287,9 +290,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     : 'text-amber-600 dark:text-amber-400'
                 }`}>
                   {vitD.status === 'normal' ? (
-                    <><CheckCircle2 className="w-3 h-3" /> Normal</>
+                    <><CheckCircle2 className="w-3 h-3" /> {d.normal}</>
                   ) : (
-                    <><AlertCircle className="w-3 h-3" /> Atenção</>
+                    <><AlertCircle className="w-3 h-3" /> {d.attention}</>
                   )}
                 </span>
                 <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
@@ -297,7 +300,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </span>
               </>
             ) : (
-              <span>Sem medição registrada</span>
+              <span>{d.noMeasurement}</span>
             )}
           </div>
         </div>
@@ -310,14 +313,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <FileText className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              <span>Últimos Exames & Tradução Clínica</span>
+              <span>{d.latestExamsTitle}</span>
             </h2>
             {exams.length > 0 && (
               <button
                 onClick={() => onNavigate('exams')}
                 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
               >
-                <span>Ver todos ({exams.length})</span>
+                <span>{dictionary.common.viewAll} ({exams.length})</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
@@ -341,12 +344,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       </h3>
                     </div>
                     <span className="text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5" /> {exam.exam_date}
+                      <Calendar className="w-3.5 h-3.5" /> {formatDate(exam.exam_date)}
                     </span>
                   </div>
 
                   <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <strong className="text-emerald-700 dark:text-emerald-400 font-bold block mb-1">Explicação em Linguagem Didática:</strong>
+                    <strong className="text-emerald-700 dark:text-emerald-400 font-bold block mb-1">{d.didacticExplanation}</strong>
                     {exam.ai_simple_translation || exam.ai_summary}
                   </p>
 
@@ -377,10 +380,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
               <div className="space-y-1">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Você ainda não possui exames cadastrados
+                  {d.emptyExamsTitle}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                  Cadastre seus exames de sangue ou imagem para traduzi-los com IA e acompanhar seu histórico.
+                  {d.emptyExamsDesc}
                 </p>
               </div>
               <button
@@ -388,7 +391,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Adicionar primeiro exame</span>
+                <span>{d.addFirstExam}</span>
               </button>
             </div>
           )}
@@ -401,13 +404,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Pill className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Medicamentos em Uso</span>
+                <span>{d.medicationsInUse}</span>
               </h3>
               <button
                 onClick={() => onNavigate('medications')}
                 className="text-xs text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 font-bold cursor-pointer"
               >
-                Gerenciar
+                {d.manage}
               </button>
             </div>
 
@@ -428,14 +431,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             ) : (
               <div className="p-5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-2">
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Nenhum medicamento cadastrado em uso contínuo.
+                  {d.emptyMedsDesc}
                 </p>
                 <button
                   onClick={() => onNavigate('medications')}
                   className="text-xs text-emerald-600 dark:text-emerald-400 font-bold hover:underline inline-flex items-center gap-1 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Cadastrar medicação</span>
+                  <span>{d.addMedication}</span>
                 </button>
               </div>
             )}
@@ -446,27 +449,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Droplet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Rotina de Hoje</span>
+                <span>{d.todayRoutine}</span>
               </h3>
               <button
                 onClick={() => onNavigate('habits')}
                 className="text-xs text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 font-bold cursor-pointer"
               >
-                Editar
+                {dictionary.common.edit}
               </button>
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500">Água</span>
+                <span className="text-[10px] uppercase font-bold text-slate-500">{d.water}</span>
                 <div className="text-base font-black text-emerald-700 dark:text-emerald-400 font-mono">{todayHabit.water_ml} ml</div>
               </div>
               <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500">Sono</span>
+                <span className="text-[10px] uppercase font-bold text-slate-500">{d.sleep}</span>
                 <div className="text-base font-black text-slate-900 dark:text-white font-mono">{todayHabit.sleep_hours}h</div>
               </div>
               <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500">Treino</span>
+                <span className="text-[10px] uppercase font-bold text-slate-500">{d.workout}</span>
                 <div className="text-base font-black text-emerald-700 dark:text-emerald-400 font-mono">{todayHabit.exercise_minutes} min</div>
               </div>
             </div>

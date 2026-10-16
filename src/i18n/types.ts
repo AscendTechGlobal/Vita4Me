@@ -20,6 +20,8 @@ export interface TranslationDictionary {
     print: string;
     startTrial: string;
     activePlan: string;
+    planFamily: string;
+    planIndividual: string;
   };
   nav: {
     overview: string;
@@ -104,5 +106,38 @@ export interface TranslationDictionary {
     emptyMeds: string;
     emptyExams: string;
     disclaimer: string;
+  };
+  dashboard: {
+    digitalRecordBadge: string;
+    primaryHolder: string;
+    switchProfile: string;
+    individualRecord: string;
+    activeRecord: string;
+    heroTitle: string;
+    heroSubtitle: string;
+    initialAnamnesis: string;
+    dossierPdf: string;
+    clinicalAssistant: string;
+    fastingGlucose: string;
+    ldlCholesterol: string;
+    bloodPressure: string;
+    vitaminD: string;
+    normal: string;
+    attention: string;
+    recordedLevel: string;
+    noMeasurement: string;
+    latestExamsTitle: string;
+    didacticExplanation: string;
+    emptyExamsTitle: string;
+    emptyExamsDesc: string;
+    addFirstExam: string;
+    medicationsInUse: string;
+    manage: string;
+    emptyMedsDesc: string;
+    addMedication: string;
+    todayRoutine: string;
+    water: string;
+    sleep: string;
+    workout: string;
   };
 }

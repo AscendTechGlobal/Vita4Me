@@ -67,10 +67,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <div className="text-left">
               <span className="block font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition leading-tight">
-                {activeMember?.name || profile?.full_name || 'Perfil Titular'}
+                {activeMember?.name || profile?.full_name || dictionary.dashboard.primaryHolder}
               </span>
               <span className="block text-[9px] text-slate-500 dark:text-slate-400">
-                {activeMember?.relationship || 'Titular'} &bull; Alternar
+                {activeMember?.relationship || dictionary.dashboard.primaryHolder} &bull; {dictionary.dashboard.switchProfile}
               </span>
             </div>
             <Users className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 ml-1" />
@@ -86,10 +86,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <div className="text-left">
               <span className="block font-bold text-slate-800 dark:text-slate-200 leading-tight">
-                {profile?.full_name || user?.email?.split('@')[0] || 'Titular'}
+                {profile?.full_name || user?.email?.split('@')[0] || dictionary.dashboard.primaryHolder}
               </span>
               <span className="block text-[9px] text-slate-500 dark:text-slate-400 font-mono">
-                Prontuário Individual
+                {dictionary.dashboard.individualRecord}
               </span>
             </div>
           </div>
@@ -142,7 +142,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <Crown className="w-3.5 h-3.5 text-amber-500" />
           <span className="hidden md:inline uppercase text-[10px] tracking-wider">
-            {profile?.plan_tier === 'family' ? `${dictionary.common.activePlan}: FAMÍLIA` : `${dictionary.common.activePlan}: INDIVIDUAL`}
+            {profile?.plan_tier === 'family' ? `${dictionary.common.activePlan}: ${dictionary.common.planFamily}` : `${dictionary.common.activePlan}: ${dictionary.common.planIndividual}`}
           </span>
           <span className="md:hidden">{dictionary.nav.pricing}</span>
         </button>
@@ -154,7 +154,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="block font-bold text-slate-900 dark:text-white leading-tight">
                 {profile?.full_name || user.email?.split('@')[0]}
               </span>
-              <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Prontuário Ativo</span>
+              <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                {dictionary.dashboard.activeRecord}
+              </span>
             </div>
             <button
               onClick={() => signOut()}
