@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useOutletContext } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { LanguageProvider } from "./contexts/LanguageContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AppLayout } from "./layouts/AppLayout";
 import { AuthPageView } from "./components/AuthPageView";
@@ -208,41 +209,43 @@ const AuthConfirmWrapper: React.FC = () => {
 export function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <BrowserRouter>
-          <Suspense fallback={<LoadingSpinner />}>
-            <Routes>
-              {/* ── ROTAS PÚBLICAS ── */}
-              <Route path="/" element={<LandingPageWrapper />} />
-              <Route path="/login" element={<AuthPageView initialTab="login" />} />
-              <Route path="/cadastro" element={<AuthPageView initialTab="signup" />} />
-              <Route path="/auth/confirm" element={<AuthConfirmWrapper />} />
+      <LanguageProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Suspense fallback={<LoadingSpinner />}>
+              <Routes>
+                {/* ── ROTAS PÚBLICAS ── */}
+                <Route path="/" element={<LandingPageWrapper />} />
+                <Route path="/login" element={<AuthPageView initialTab="login" />} />
+                <Route path="/cadastro" element={<AuthPageView initialTab="signup" />} />
+                <Route path="/auth/confirm" element={<AuthConfirmWrapper />} />
 
-              {/* ── ROTAS PROTEGIDAS /app/* ── */}
-              <Route
-                path="/app"
-                element={
-                  <ProtectedRoute>
-                    <AppLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route index element={<DashboardRoute />} />
-                <Route path="exames" element={<ExamsRoute />} />
-                <Route path="indicadores" element={<IndicatorsRoute />} />
-                <Route path="linha-do-tempo" element={<TimelineRoute />} />
-                <Route path="medicamentos" element={<MedicationsRoute />} />
-                <Route path="rotina" element={<HabitsRoute />} />
-                <Route path="assistente" element={<ChatRoute />} />
-                <Route path="configuracoes" element={<SettingsRoute />} />
-              </Route>
+                {/* ── ROTAS PROTEGIDAS /app/* ── */}
+                <Route
+                  path="/app"
+                  element={
+                    <ProtectedRoute>
+                      <AppLayout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<DashboardRoute />} />
+                  <Route path="exames" element={<ExamsRoute />} />
+                  <Route path="indicadores" element={<IndicatorsRoute />} />
+                  <Route path="linha-do-tempo" element={<TimelineRoute />} />
+                  <Route path="medicamentos" element={<MedicationsRoute />} />
+                  <Route path="rotina" element={<HabitsRoute />} />
+                  <Route path="assistente" element={<ChatRoute />} />
+                  <Route path="configuracoes" element={<SettingsRoute />} />
+                </Route>
 
-              {/* ── FALLBACK ── */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
-      </AuthProvider>
+                {/* ── FALLBACK ── */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
+          </BrowserRouter>
+        </AuthProvider>
+      </LanguageProvider>
     </ThemeProvider>
   );
 }

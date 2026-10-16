@@ -27,6 +27,8 @@ import { PricingPlan } from "../types";
 import { trackEvent, trackPageView } from "../lib/analytics";
 import { LegalDocumentsModal, LegalTab } from "./LegalDocumentsModal";
 import { useAuth } from "../contexts/AuthContext";
+import { useLanguage } from "../contexts/LanguageContext";
+import { LanguageSelector } from "./LanguageSelector";
 
 interface LandingPageViewProps {
   onEnterApp: () => void;
@@ -40,6 +42,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   onOpenBillingModal,
 }) => {
   const { user } = useAuth();
+  const { dictionary } = useLanguage();
   const [billingInterval, setBillingInterval] = useState<"monthly" | "yearly">("monthly");
   const [billingRegion, setBillingRegion] = useState<"brasil" | "exterior">("brasil");
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
@@ -192,7 +195,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           </nav>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <LanguageSelector variant="dropdown" />
+
             {user ? (
               <>
                 <button
@@ -206,22 +211,22 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   onClick={onOpenBillingModal}
                   className="hidden sm:flex px-4 py-2 rounded-xl text-xs font-semibold text-[#CDEBC5] hover:text-white hover:bg-white/5 border border-[#126D4A] transition cursor-pointer"
                 >
-                  Planos
+                  {dictionary.nav.pricing}
                 </button>
               </>
             ) : (
               <>
                 <button
                   onClick={onOpenAuthModal}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white hover:text-[#7AC943] hover:bg-white/5 transition cursor-pointer"
+                  className="px-3 sm:px-4 py-2 rounded-xl text-xs font-bold text-white hover:text-[#7AC943] hover:bg-white/5 transition cursor-pointer"
                 >
-                  Entrar
+                  {dictionary.nav.login}
                 </button>
                 <button
                   onClick={onOpenBillingModal}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#126D4A] to-[#7AC943] hover:from-[#126D4A] hover:to-[#96DC63] text-[#0A3B2E] font-black text-xs shadow-lg shadow-[#7AC943]/20 transition-all hover:scale-[1.03] cursor-pointer flex items-center gap-1.5"
+                  className="px-4 sm:px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#126D4A] to-[#7AC943] hover:from-[#126D4A] hover:to-[#96DC63] text-[#0A3B2E] font-black text-xs shadow-lg shadow-[#7AC943]/20 transition-all hover:scale-[1.03] cursor-pointer flex items-center gap-1.5"
                 >
-                  <span>Testar 7 Dias Grátis</span>
+                  <span>{dictionary.landing.ctaPrimary}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </>
@@ -246,20 +251,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#0A3B2E] border border-[#7AC943]/40 text-[#7AC943] text-xs font-bold shadow-inner">
             <ShieldCheck className="w-4 h-4 text-[#7AC943]" />
-            <span>PRONTUÁRIO MÉDICO DIGITAL & TRADUTOR DE EXAMES</span>
+            <span>{dictionary.landing.badge}</span>
           </div>
 
           {/* Main Headline */}
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white max-w-4xl mx-auto leading-[1.12]">
-            Seu histórico de saúde organizado e explicado com{" "}
+            {dictionary.landing.heroTitle}{" "}
             <span className="bg-gradient-to-r from-[#7AC943] via-[#CDEBC5] to-[#7AC943] bg-clip-text text-transparent">
-              clareza.
+              {dictionary.landing.heroHighlight}
             </span>
           </h1>
 
           {/* Subtitle */}
           <p className="text-base sm:text-lg text-[#CDEBC5] max-w-2xl mx-auto leading-relaxed font-normal">
-            Centralize todos os seus exames laboratoriais, traduza laudos médicos complexos para linguagem simples e gere dossiês profissionais para suas consultas em segundos.
+            {dictionary.landing.heroSubtitle}
           </p>
 
           {/* CTA Buttons */}
@@ -270,14 +275,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   onClick={onEnterApp}
                   className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-[#7AC943] to-[#96DC63] hover:from-[#96DC63] hover:to-[#7AC943] text-[#0A3B2E] font-black text-sm shadow-xl shadow-[#7AC943]/25 transition-all hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <span>Ir para Meu Prontuário</span>
+                  <span>Meu Prontuário</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
                 <button
                   onClick={onOpenBillingModal}
                   className="w-full sm:w-auto px-7 py-4 rounded-2xl bg-[#0A3B2E] hover:bg-[#126D4A]/60 border border-[#126D4A] hover:border-[#7AC943]/60 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <span>Ver Planos & Assinaturas</span>
+                  <span>{dictionary.nav.pricing}</span>
                 </button>
               </>
             ) : (
@@ -286,7 +291,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   onClick={onOpenBillingModal}
                   className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-[#7AC943] to-[#96DC63] hover:from-[#96DC63] hover:to-[#7AC943] text-[#0A3B2E] font-black text-sm shadow-xl shadow-[#7AC943]/25 transition-all hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <span>Começar Teste de 7 Dias Grátis</span>
+                  <span>{dictionary.landing.ctaPrimary}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
 
@@ -295,7 +300,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   className="w-full sm:w-auto px-7 py-4 rounded-2xl bg-[#0A3B2E] hover:bg-[#126D4A]/60 border border-[#126D4A] hover:border-[#7AC943]/60 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   <Lock className="w-4 h-4 text-[#7AC943]" />
-                  <span>Acessar Prontuário</span>
+                  <span>{dictionary.nav.login}</span>
                 </button>
               </>
             )}
@@ -549,10 +554,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               PLANOS TRANSPARENTES COM 7 DIAS GRÁTIS
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-              Escolha o plano ideal para você ou sua família
+              {dictionary.landing.pricingTitle}
             </h2>
             <p className="text-xs sm:text-sm text-[#CDEBC5]">
-              Comece com <strong>7 dias de teste gratuito</strong>. Sem taxa de cancelamento, cancele quando quiser.
+              {dictionary.landing.pricingSubtitle}
             </p>
 
             {/* Country / Region & Monthly / Yearly Switcher */}
@@ -568,7 +573,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       : "text-[#CDEBC5] hover:text-white"
                   }`}
                 >
-                  🇧🇷 Brasil (BRL)
+                  {dictionary.billing.regionBrazil}
                 </button>
                 <button
                   type="button"
@@ -579,7 +584,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       : "text-[#CDEBC5] hover:text-white"
                   }`}
                 >
-                  🌍 Exterior (USD)
+                  {dictionary.billing.regionExterior}
                 </button>
               </div>
 
@@ -594,7 +599,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       : "text-[#CDEBC5] hover:text-white"
                   }`}
                 >
-                  Mensal
+                  {dictionary.landing.monthly}
                 </button>
                 <button
                   type="button"
@@ -605,9 +610,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       : "text-[#CDEBC5] hover:text-white"
                   }`}
                 >
-                  <span>Anual</span>
+                  <span>{dictionary.landing.yearly}</span>
                   <span className="px-2 py-0.5 rounded-md bg-[#126D4A] text-white text-[10px] font-extrabold">
-                    20% OFF
+                    {dictionary.landing.yearlyDiscountBadge}
                   </span>
                 </button>
               </div>
@@ -688,7 +693,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                           </div>
 
                           <span className="text-[11px] text-[#7AC943] font-bold block">
-                            Faturado anualmente com 20% de desconto
+                            {dictionary.landing.billedAnnually}
                           </span>
                         </div>
                       ) : (
@@ -699,7 +704,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                             <span className="text-xs text-[#CDEBC5]">/mês</span>
                           </div>
                           <span className="text-[11px] text-[#CDEBC5]/70 block">
-                            Faturamento mensal recorrente
+                            {dictionary.landing.billedMonthly}
                           </span>
                         </div>
                       )}
@@ -745,7 +750,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                           : "bg-[#126D4A] hover:bg-[#7AC943] text-white hover:text-[#0A3B2E]"
                       }`}
                     >
-                      <span>Iniciar Teste Grátis de 7 Dias</span>
+                      <span>{dictionary.landing.ctaPrimary}</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
@@ -833,7 +838,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 onClick={onOpenBillingModal}
                 className="px-10 py-4 rounded-2xl bg-[#7AC943] hover:bg-[#96DC63] text-[#0A3B2E] font-black text-sm shadow-2xl shadow-[#7AC943]/30 transition-all hover:scale-105 cursor-pointer inline-flex items-center gap-2"
               >
-                <span>Iniciar 7 Dias de Teste Grátis</span>
+                <span>{dictionary.landing.ctaPrimary}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             )}
@@ -858,7 +863,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 vita<span className="text-[#7AC943]">4</span>me
               </span>
               <span className="text-[10px] text-slate-400">
-                &copy; 2026 Vita4Me Tecnologia em Saúde. Todos os direitos reservados.
+                {dictionary.landing.footerCopyright}
               </span>
             </div>
           </div>

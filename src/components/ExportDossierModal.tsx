@@ -22,6 +22,7 @@ import {
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, UserProfile, DailyHabit } from "../types";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface ExportDossierModalProps {
   isOpen: boolean;
@@ -46,6 +47,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
   records,
   todayHabit,
 }) => {
+  const { dictionary, language } = useLanguage();
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
 
@@ -138,11 +140,13 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
     return 'Obesidade Grau II/III';
   };
 
+  const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
+
   const formatDate = (isoString?: string) => {
     if (!isoString) return '';
     try {
       const d = new Date(isoString.includes('T') ? isoString : `${isoString}T12:00:00Z`);
-      return isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
+      return isNaN(d.getTime()) ? '' : d.toLocaleDateString(localeStr);
     } catch {
       return '';
     }
@@ -221,7 +225,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 text-xs font-bold transition cursor-pointer shadow-xs"
           >
             <ArrowLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>Voltar</span>
+            <span>{dictionary.common.back}</span>
           </button>
 
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
@@ -238,7 +242,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
               title="Imprimir documento ou salvar pelo navegador"
             >
               <Printer className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-              <span>Imprimir</span>
+              <span>{dictionary.common.print}</span>
             </button>
 
             <button
@@ -249,12 +253,12 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
               {isExporting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Gerando PDF...</span>
+                  <span>{dictionary.common.loading}</span>
                 </>
               ) : (
                 <>
                   <Download className="w-4 h-4" />
-                  <span>Baixar Dossiê PDF</span>
+                  <span>{dictionary.common.download} {dictionary.nav.dossierPdf}</span>
                 </>
               )}
             </button>
@@ -282,19 +286,19 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                 </div>
                 <div className="space-y-0.5">
                   <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-700 font-bold block">
-                    DOSSIÊ CLÍNICO DIGITAL OFICIAL &bull; VITA4ME
+                    {dictionary.dossier.officialBadge}
                   </span>
                   <h1 className="text-xl font-black text-slate-950 tracking-tight">
-                    Prontuário e Histórico de Saúde
+                    {dictionary.dossier.title}
                   </h1>
                   <p className="text-xs text-slate-600">
-                    Documento consolidado para apresentação e suporte em consultas médicas e teleatendimento.
+                    {dictionary.dossier.subtitle}
                   </p>
                 </div>
               </div>
 
               <div className="text-right text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-200 shrink-0">
-                <div><strong>EMISSÃO:</strong> {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+                <div><strong>{dictionary.dossier.issueDate}</strong> {new Date().toLocaleDateString(localeStr)} às {new Date().toLocaleTimeString(localeStr, { hour: '2-digit', minute: '2-digit' })}</div>
                 <div className="text-[10px] text-emerald-700 font-mono font-bold">PROTOCOLO: V4M-{Date.now().toString(36).toUpperCase()}</div>
               </div>
             </div>
@@ -303,21 +307,21 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 text-xs page-break-inside-avoid">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block">PACIENTE:</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">{dictionary.dossier.patient}</span>
                   <strong className="text-slate-950 font-bold text-sm">{memberName}</strong>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block">SEXO / IDADE:</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">{dictionary.dossier.genderAge}</span>
                   <strong className="text-slate-900">
-                    {gender} {age ? `• ${age} anos` : (birthDate ? `• ${formatDate(birthDate)}` : '')}
+                    {gender} {age ? `• ${age}` : (birthDate ? `• ${formatDate(birthDate)}` : '')}
                   </strong>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block">TIPO SANGUÍNEO:</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">{dictionary.dossier.bloodType}</span>
                   <strong className="text-emerald-700 font-bold">{bloodType}</strong>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block">PESO / ALTURA:</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">{dictionary.dossier.weightHeight}</span>
                   <strong className="text-slate-900">
                     {weight ? `${weight} kg` : '--'} {height ? `• ${height} cm` : ''}
                   </strong>
@@ -326,27 +330,27 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200">
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block">IMC ESTIMADO:</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">{dictionary.dossier.estimatedBmi}</span>
                   {imc ? (
                     <strong className="text-slate-900">
                       {imc} kg/m² <span className="text-[11px] text-slate-600 font-normal">({getImcClassification(imc)})</span>
                     </strong>
                   ) : (
-                    <span className="text-slate-500">Não calculado</span>
+                    <span className="text-slate-500">--</span>
                   )}
                 </div>
 
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block">ALERGIAS RELATADAS:</span>
-                  <strong className={allergies.some(a => !a.toLowerCase().includes('nenhuma')) ? 'text-rose-700 font-bold' : 'text-slate-700'}>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">{dictionary.dossier.allergies}</span>
+                  <strong className={allergies.some(a => !a.toLowerCase().includes('nenhuma') && !a.toLowerCase().includes('none') && !a.toLowerCase().includes('ninguna')) ? 'text-rose-700 font-bold' : 'text-slate-700'}>
                     {allergies.join(', ')}
                   </strong>
                 </div>
 
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block">CONDIÇÕES CRÔNICAS:</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">{dictionary.dossier.chronicConditions}</span>
                   <strong className="text-slate-900">
-                    {chronicConditions.length ? chronicConditions.join(', ') : 'Nenhuma relatada'}
+                    {chronicConditions.length ? chronicConditions.join(', ') : '--'}
                   </strong>
                 </div>
               </div>
@@ -356,7 +360,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
             <div className="space-y-2 page-break-inside-avoid">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
                 <Activity className="w-4 h-4 text-emerald-600" />
-                <span>1. Indicadores Clínicos & Sinais Vitais Monitorados</span>
+                <span>{dictionary.dossier.vitalsTitle}</span>
               </h3>
 
               {memberIndicators.length > 0 ? (
@@ -400,7 +404,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                 </table>
               ) : (
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 italic">
-                  Nenhum indicador vital registrado no prontuário do paciente no momento.
+                  {dictionary.dossier.emptyVitals}
                 </div>
               )}
             </div>
@@ -409,7 +413,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
             <div className="space-y-2 page-break-inside-avoid">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
                 <Pill className="w-4 h-4 text-emerald-600" />
-                <span>2. Medicamentos em Uso Ativo / Contínuo</span>
+                <span>{dictionary.dossier.medicationsTitle}</span>
               </h3>
 
               {activeMeds.length > 0 ? (
@@ -435,7 +439,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                 </table>
               ) : (
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 italic">
-                  Nenhum medicamento contínuo em uso ativo registrado.
+                  {dictionary.dossier.emptyMeds}
                 </div>
               )}
             </div>
@@ -444,7 +448,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
             <div className="space-y-2 page-break-inside-avoid">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
                 <FileText className="w-4 h-4 text-emerald-600" />
-                <span>3. Últimos Laudos & Exames Laboratoriais</span>
+                <span>{dictionary.dossier.examsTitle}</span>
               </h3>
 
               {memberExams.length > 0 ? (
@@ -477,7 +481,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                 </div>
               ) : (
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 italic">
-                  Nenhum exame laboratorial cadastrado no prontuário do paciente no período.
+                  {dictionary.dossier.emptyExams}
                 </div>
               )}
             </div>
@@ -487,7 +491,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
               <div className="space-y-2 page-break-inside-avoid">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  <span>4. Linha do Tempo & Histórico Clínico</span>
+                  <span>{dictionary.dossier.historyTitle}</span>
                 </h3>
 
                 <div className="space-y-2">
@@ -509,21 +513,21 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
               <div className="space-y-2 page-break-inside-avoid">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
                   <Heart className="w-4 h-4 text-emerald-600" />
-                  <span>5. Rotina e Hábitos de Saúde do Paciente</span>
+                  <span>{dictionary.dossier.habitsTitle}</span>
                 </h3>
 
                 <div className="grid grid-cols-3 gap-3 text-xs">
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">HIDRATAÇÃO DIÁRIA:</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">HIDRATAÇÃO:</span>
                     <strong className="text-slate-950 text-sm">{todayHabit.water_ml} ml</strong>
                   </div>
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">SONO REGULAR:</span>
-                    <strong className="text-slate-950 text-sm">{todayHabit.sleep_hours} horas/noite</strong>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">SONO:</span>
+                    <strong className="text-slate-950 text-sm">{todayHabit.sleep_hours} h</strong>
                   </div>
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">ATIVIDADE FÍSICA:</span>
-                    <strong className="text-slate-950 text-sm">{todayHabit.exercise_minutes} min/dia</strong>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">EXERCÍCIO:</span>
+                    <strong className="text-slate-950 text-sm">{todayHabit.exercise_minutes} min</strong>
                   </div>
                 </div>
               </div>
@@ -532,11 +536,11 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
             {/* Rodapé Ético, Jurídico e Espaço para Anotações Médicas */}
             <div className="border-t border-slate-200 pt-3 space-y-2 text-[10px] text-slate-500 leading-relaxed page-break-inside-avoid">
               <p className="italic">
-                <strong>Aviso Ético e Regulatório:</strong> O Vita4Me atua como ferramenta digital de organização e prontuário pessoal do próprio paciente. As análises de inteligência artificial são sintetizadas exclusivamente a partir dos documentos anexados pelo titular e não constituem consulta médica, diagnóstico conclusivo ou prescrição farmacológica independente.
+                {dictionary.dossier.disclaimer}
               </p>
               <div className="flex justify-between items-center pt-2 text-[9px] text-slate-400 font-mono">
-                <span>VITA4ME DIGITAL HEALTH SYSTEM &bull; LGPD COMPLIANT</span>
-                <span>Página autenticada pelo titular em {new Date().toLocaleDateString('pt-BR')}</span>
+                <span>VITA4ME DIGITAL HEALTH SYSTEM &bull; COMPLIANT</span>
+                <span>{new Date().toLocaleDateString(localeStr)}</span>
               </div>
             </div>
           </div>

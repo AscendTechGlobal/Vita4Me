@@ -14,6 +14,7 @@ import {
   X
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { useLanguage } from "../contexts/LanguageContext";
 
 export type ActiveTab =
   | "overview"
@@ -50,20 +51,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   medicationsCount,
 }) => {
   const { profile } = useAuth();
+  const { dictionary } = useLanguage();
   const location = useLocation();
   const navigate = useNavigate();
 
   const isSubscribed = profile?.subscription_status === "active";
 
   const navItems: NavItemConfig[] = [
-    { id: "overview", label: "Visão Geral 360°", path: "/app", icon: LayoutDashboard },
-    { id: "exams", label: "Central de Exames (IA)", path: "/app/exames", icon: FileText, badge: examsCount },
-    { id: "indicators", label: "Painel de Indicadores", path: "/app/indicadores", icon: Activity },
-    { id: "timeline", label: "Linha do Tempo Médica", path: "/app/linha-do-tempo", icon: Calendar },
-    { id: "medications", label: "Medicamentos & Lembretes", path: "/app/medicamentos", icon: Pill, badge: medicationsCount },
-    { id: "habits", label: "Rotina & Bem-estar", path: "/app/rotina", icon: Droplet },
-    { id: "chat", label: "Assistente IA Vita4Me", path: "/app/assistente", icon: MessageSquare, isNew: true },
-    { id: "settings", label: "Configurações & Conta", path: "/app/configuracoes", icon: Settings },
+    { id: "overview", label: dictionary.nav.overview, path: "/app", icon: LayoutDashboard },
+    { id: "exams", label: dictionary.nav.exams, path: "/app/exames", icon: FileText, badge: examsCount },
+    { id: "indicators", label: dictionary.nav.indicators, path: "/app/indicadores", icon: Activity },
+    { id: "timeline", label: dictionary.nav.timeline, path: "/app/linha-do-tempo", icon: Calendar },
+    { id: "medications", label: dictionary.nav.medications, path: "/app/medicamentos", icon: Pill, badge: medicationsCount },
+    { id: "habits", label: dictionary.nav.habits, path: "/app/rotina", icon: Droplet },
+    { id: "chat", label: dictionary.nav.aiAssistant, path: "/app/assistente", icon: MessageSquare, isNew: true },
+    { id: "settings", label: dictionary.nav.settings, path: "/app/configuracoes", icon: Settings },
   ];
 
   const isItemActive = (item: NavItemConfig) => {

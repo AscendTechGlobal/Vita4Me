@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
+import { useLanguage } from "../contexts/LanguageContext";
+import { LanguageSelector } from "./LanguageSelector";
 import { FamilyMember } from "../types";
 
 interface NavbarProps {
@@ -36,6 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { user, profile, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { dictionary } = useLanguage();
 
   return (
     <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 md:px-6 flex items-center justify-between z-30 sticky top-0 transition-colors shadow-xs">
@@ -102,9 +105,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold transition cursor-pointer shadow-xs"
             title="Ver Landing Page Institucional"
           >
-            <span>Ver Site</span>
+            <span>{dictionary.nav.viewSite}</span>
           </button>
         )}
+
+        {/* Multilingual Selector */}
+        <LanguageSelector variant="dropdown" />
 
         {/* Light / Dark Mode Toggle */}
         <button
@@ -126,7 +132,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           title="Gerar Dossiê Médico em PDF para Consultas"
         >
           <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-          <span>Dossiê PDF</span>
+          <span>{dictionary.nav.dossierPdf}</span>
         </button>
 
         {/* Plan Upgrade Pill */}
@@ -136,9 +142,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <Crown className="w-3.5 h-3.5 text-amber-500" />
           <span className="hidden md:inline uppercase text-[10px] tracking-wider">
-            Plano {profile?.plan_tier === 'family' ? 'FAMÍLIA' : 'INDIVIDUAL'}
+            {profile?.plan_tier === 'family' ? `${dictionary.common.activePlan}: FAMÍLIA` : `${dictionary.common.activePlan}: INDIVIDUAL`}
           </span>
-          <span className="md:hidden">Planos</span>
+          <span className="md:hidden">{dictionary.nav.pricing}</span>
         </button>
 
         {/* User Auth Menu */}
@@ -152,7 +158,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <button
               onClick={() => signOut()}
-              title="Sair da Conta"
+              title={dictionary.nav.logout}
               className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-800 transition cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
@@ -164,7 +170,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
           >
             <LogIn className="w-3.5 h-3.5" />
-            <span>Entrar / Cadastrar</span>
+            <span>{dictionary.nav.login} / {dictionary.nav.signup}</span>
           </button>
         )}
       </div>

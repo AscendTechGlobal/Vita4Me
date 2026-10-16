@@ -8,6 +8,7 @@ import {
 } from "../lib/billing";
 import { PricingPlan } from "../types";
 import { useAuth } from "../contexts/AuthContext";
+import { useLanguage } from "../contexts/LanguageContext";
 import { trackEvent } from "../lib/analytics";
 import {
   X,
@@ -32,10 +33,15 @@ interface BillingModalProps {
 
 export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) => {
   const { profile, reloadProfile } = useAuth();
+  const { language, dictionary } = useLanguage();
   const [interval, setInterval] = useState<"monthly" | "yearly">("monthly");
-  const [region, setRegion] = useState<"brasil" | "exterior">("brasil");
+  const [region, setRegion] = useState<"brasil" | "exterior">(language === "pt" ? "brasil" : "exterior");
   const [method, setMethod] = useState<"pix" | "credit_card">("pix");
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRegion(language === "pt" ? "brasil" : "exterior");
+  }, [language]);
 
   // Estado do Checkout Pix Ativo
   const [pixModalData, setPixModalData] = useState<{
@@ -385,13 +391,13 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
             <div className="text-center space-y-3 max-w-2xl mx-auto mb-6">
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-full text-xs font-bold text-emerald-700 dark:text-emerald-300">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Planos Vita4Me com 7 Dias Grátis</span>
+                <span>{dictionary.billing.badgeTrial}</span>
               </div>
               <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-                Escolha seu plano e comece hoje mesmo
+                {dictionary.billing.modalTitle}
               </h2>
               <p className="text-xs md:text-sm text-slate-600 dark:text-slate-400">
-                Acesso completo a todas as ferramentas de tradução de exames e prontuário digital.
+                {dictionary.billing.modalSubtitle}
               </p>
 
               {/* SELETORES: PAÍS (BRASIL VS EXTERIOR) & FREQUÊNCIA */}
@@ -409,7 +415,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
                         : "text-slate-500 dark:text-slate-400 hover:text-slate-900"
                     }`}
                   >
-                    <span>🇧🇷 Brasil</span>
+                    <span>{dictionary.billing.regionBrazil}</span>
                   </button>
                   <button
                     onClick={() => setRegion("exterior")}
@@ -420,7 +426,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
                     }`}
                   >
                     <Globe className="w-3.5 h-3.5 text-slate-400" />
-                    <span>🌍 Exterior</span>
+                    <span>{dictionary.billing.regionExterior}</span>
                   </button>
                 </div>
 
@@ -434,7 +440,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
                         : "text-slate-500 dark:text-slate-400 hover:text-slate-900"
                     }`}
                   >
-                    Mensal
+                    {dictionary.landing.monthly}
                   </button>
                   <button
                     onClick={() => setInterval("yearly")}
@@ -444,9 +450,9 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
                         : "text-slate-500 dark:text-slate-400 hover:text-slate-900"
                     }`}
                   >
-                    <span>Anual</span>
+                    <span>{dictionary.landing.yearly}</span>
                     <span className="px-1.5 py-0.2 bg-amber-400 text-slate-950 font-black text-[9px] rounded-md">
-                      20% OFF
+                      {dictionary.landing.yearlyDiscountBadge}
                     </span>
                   </button>
                 </div>
@@ -455,7 +461,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
               {/* Sub-seletor de Método no Brasil: Pix vs Cartão */}
               {region === "brasil" && (
                 <div className="inline-flex items-center gap-2 pt-1 text-xs">
-                  <span className="text-slate-400">Método no Brasil:</span>
+                  <span className="text-slate-400">Método:</span>
                   <button
                     onClick={() => setMethod("pix")}
                     className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer flex items-center gap-1 ${
@@ -465,7 +471,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
                     }`}
                   >
                     <QrCode className="w-3 h-3" />
-                    <span>Pix Instantâneo (Recomendado)</span>
+                    <span>{dictionary.billing.methodPix}</span>
                   </button>
                   <button
                     onClick={() => setMethod("credit_card")}
@@ -476,7 +482,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
                     }`}
                   >
                     <CreditCard className="w-3 h-3" />
-                    <span>Cartão Nacional</span>
+                    <span>{dictionary.billing.methodCard}</span>
                   </button>
                 </div>
               )}
@@ -485,10 +491,10 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
               {region === "brasil" && (
                 <div className="max-w-xs mx-auto pt-1 space-y-1 text-left">
                   <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                    <span>CPF do Titular:</span>
+                    <span>{dictionary.billing.cpfLabel}</span>
                     {cpf && validateCpf(cpf) && (
                       <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-bold">
-                        <Check className="w-3 h-3" /> Válido
+                        <Check className="w-3 h-3" /> {dictionary.billing.cpfValid}
                       </span>
                     )}
                   </div>
@@ -668,13 +674,13 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
                         {loadingPlanId === plan.id ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
                         ) : isCurrent ? (
-                          <span>Plano Ativo</span>
+                          <span>{dictionary.common.activePlan}</span>
                         ) : (
                           <>
                             <span>
                               {region === "brasil" && method === "pix"
-                                ? "Pagar via Pix (Imediato)"
-                                : plan.ctaText}
+                                ? dictionary.billing.payPixBtn
+                                : dictionary.billing.startTrialBtn}
                             </span>
                             <ArrowRight className="w-3.5 h-3.5" />
                           </>
@@ -697,7 +703,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
             </span>
             <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
               <CreditCard className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-              Pagamento 100% Seguro e Criptografado
+              {dictionary.billing.securePayment}
             </span>
           </div>
 
