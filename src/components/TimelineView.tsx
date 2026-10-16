@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { HealthRecord, RecordType, FamilyMember } from "../types";
 import { saveHealthRecord, deleteHealthRecord } from "../lib/healthStorage";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface TimelineViewProps {
   records: HealthRecord[];
@@ -26,6 +27,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
   onRefreshRecords,
   onBack,
 }) => {
+  const { dictionary, language } = useLanguage();
+  const tDict = dictionary.timeline;
+  const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
   const [selectedType, setSelectedType] = useState<string>("todos");
   const [showAddModal, setShowAddModal] = useState(false);
 
@@ -86,7 +90,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 text-xs font-bold transition cursor-pointer shadow-xs"
       >
         <ArrowLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-        <span>Voltar ao Dashboard</span>
+        <span>{tDict.backToDashboard}</span>
       </button>
 
       {/* Header */}
@@ -94,10 +98,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
             <Calendar className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-            <span>Linha do Tempo Médica Contínua</span>
+            <span>{tDict.title}</span>
           </h1>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-            Histórico cronológico de consultas, vacinas, cirurgias e procedimentos de {activeMember?.name || 'você'}.
+            {tDict.subtitle}
           </p>
         </div>
 
@@ -106,23 +110,30 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
           className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs transition flex items-center gap-2 cursor-pointer self-start md:self-auto"
         >
           <Plus className="w-4 h-4" />
-          <span>Novo Evento Clínico</span>
+          <span>{tDict.registerBtn}</span>
         </button>
       </div>
 
       {/* Filter Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {['todos', 'consulta', 'vacina', 'cirurgia', 'internacao', 'alergia'].map((type) => (
+        {[
+          { key: 'todos', label: tDict.allEvents },
+          { key: 'consulta', label: tDict.consultations },
+          { key: 'vacina', label: tDict.vaccines },
+          { key: 'cirurgia', label: tDict.surgeries },
+          { key: 'internacao', label: tDict.hospitalizations },
+          { key: 'alergia', label: tDict.allergies }
+        ].map((item) => (
           <button
-            key={type}
-            onClick={() => setSelectedType(type)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold capitalize whitespace-nowrap transition cursor-pointer ${
-              selectedType === type
+            key={item.key}
+            onClick={() => setSelectedType(item.key)}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+              selectedType === item.key
                 ? "bg-emerald-600 text-white shadow-xs"
                 : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800"
             }`}
           >
-            {type === 'todos' ? 'Todos os Eventos' : type}
+            {item.label}
           </button>
         ))}
       </div>
@@ -186,10 +197,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
           </div>
           <div className="space-y-1">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Nenhum evento clínico registrado
+              {tDict.emptyRecords}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              Registre suas consultas passadas, vacinas, cirurgias ou histórico de alergias para construir sua linha do tempo contínua.
+              {tDict.subtitle}
             </p>
           </div>
           <button
@@ -197,7 +208,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition inline-flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Cadastrar evento médico</span>
+            <span>{tDict.registerBtn}</span>
           </button>
         </div>
       )}
@@ -212,17 +223,17 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         >
           <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-6 space-y-4 animate-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Cadastrar Evento Médico</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">{tDict.modalTitle}</h3>
               <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white">✕</button>
             </div>
 
             <form onSubmit={handleAddSubmit} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Título do Evento *</label>
+                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{tDict.titleLabel} *</label>
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Consulta Cardiológica, Vacina da Gripe"
+                  placeholder="..."
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white"
@@ -231,22 +242,22 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Tipo de Registro</label>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{tDict.typeLabel}</label>
                   <select
                     value={recordType}
                     onChange={(e: any) => setRecordType(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-2 py-2 text-xs text-slate-900 dark:text-white"
                   >
-                    <option value="consulta">Consulta</option>
-                    <option value="vacina">Vacina</option>
-                    <option value="cirurgia">Cirurgia</option>
-                    <option value="internacao">Internação</option>
-                    <option value="alergia">Alergia</option>
+                    <option value="consulta">{tDict.consultations}</option>
+                    <option value="vacina">{tDict.vaccines}</option>
+                    <option value="cirurgia">{tDict.surgeries}</option>
+                    <option value="internacao">{tDict.hospitalizations}</option>
+                    <option value="alergia">{tDict.allergies}</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Data</label>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{tDict.dateLabel}</label>
                   <input
                     type="date"
                     value={eventDate}
@@ -257,10 +268,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Médico ou Clínica</label>
+                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{tDict.doctorFacilityLabel}</label>
                 <input
                   type="text"
-                  placeholder="Ex: Dr. Marcelo (Hospital Sírio-Libanês)"
+                  placeholder="..."
                   value={doctorOrInstitution}
                   onChange={(e) => setDoctorOrInstitution(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white"
@@ -268,10 +279,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Observações e Orientações</label>
+                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{tDict.descriptionLabel}</label>
                 <textarea
                   rows={3}
-                  placeholder="Orientações médicas, prescrições recebidas..."
+                  placeholder="..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
@@ -284,13 +295,13 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                   onClick={() => setShowAddModal(false)}
                   className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white"
                 >
-                  Cancelar
+                  {dictionary.common.cancel}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
                 >
-                  Salvar Evento
+                  {tDict.saveBtn}
                 </button>
               </div>
             </form>

@@ -13,6 +13,7 @@ import {
 import { HealthIndicator, FamilyMember } from "../types";
 import { saveIndicator, deleteIndicator } from "../lib/healthStorage";
 import { trackEvent } from "../lib/analytics";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface IndicatorsViewProps {
   indicators: HealthIndicator[];
@@ -27,6 +28,9 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
   onRefreshIndicators,
   onBack,
 }) => {
+  const { dictionary, language } = useLanguage();
+  const iDict = dictionary.indicators;
+  const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
   const [selectedMarker, setSelectedMarker] = useState<string>("Glicemia");
   const [showAddModal, setShowAddModal] = useState(false);
 
@@ -109,7 +113,7 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
         className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 text-xs font-bold transition cursor-pointer shadow-xs"
       >
         <ArrowLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-        <span>Voltar ao Dashboard</span>
+        <span>{iDict.backToDashboard}</span>
       </button>
 
       {/* Header */}
@@ -117,10 +121,10 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
             <Activity className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-            <span>Painel de Indicadores Clínicos & Evolução</span>
+            <span>{iDict.title}</span>
           </h1>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-            Monitore suas curvas laboratoriais, pressão arterial e taxas ao longo dos meses e anos.
+            {iDict.subtitle}
           </p>
         </div>
 
@@ -129,7 +133,7 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
           className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs transition flex items-center gap-2 cursor-pointer self-start md:self-auto"
         >
           <Plus className="w-4 h-4" />
-          <span>Registrar Nova Medição</span>
+          <span>{iDict.registerBtn}</span>
         </button>
       </div>
 
@@ -158,7 +162,7 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div>
             <span className="text-[10px] font-mono font-bold uppercase text-emerald-700 dark:text-emerald-400">
-              Evolução Temporal &bull; {selectedMarker}
+              {iDict.timeEvolution} &bull; {selectedMarker}
             </span>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-3xl font-black text-slate-900 dark:text-white font-mono">
@@ -171,12 +175,12 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
           </div>
 
           <div className="text-right text-xs bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-0.5">
-            <span className="text-[10px] uppercase font-bold text-slate-500 block">Faixa de Referência Ideal:</span>
+            <span className="text-[10px] uppercase font-bold text-slate-500 block">{iDict.idealReference}</span>
             <strong className="text-emerald-700 dark:text-emerald-400 font-mono font-bold">
               {latestVal ? `${latestVal.reference_min} - ${latestVal.reference_max} ${latestVal.unit}` : (
                 (() => {
                   const opt = markerOptions.find(o => o.name === selectedMarker);
-                  return opt ? `${opt.min} - ${opt.max} ${opt.unit}` : 'Definido no laudo';
+                  return opt ? `${opt.min} - ${opt.max} ${opt.unit}` : iDict.definedInReport;
                 })()
               )}
             </strong>
@@ -205,28 +209,28 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
                     }`}
                   />
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-                    {new Date(d.measured_at).toLocaleDateString('pt-BR', { month: 'short', day: '2-digit' })}
+                    {new Date(d.measured_at).toLocaleDateString(localeStr, { month: 'short', day: '2-digit' })}
                   </span>
                 </div>
               );
             })
           ) : (
             <div className="w-full text-center text-slate-400 text-xs py-20">
-              Nenhuma medição registrada para {selectedMarker} ainda.
+              —
             </div>
           )}
         </div>
 
         {/* Measurement History Table */}
         <div className="space-y-3">
-          <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Histórico de Coletas</h3>
-          {markerData.length > 0 ? (
+          <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">{iDict.timeEvolution}</h3>
+          {markerData.length > 0 && (
             <div className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden text-xs">
               {[...markerData].reverse().map((d) => (
                 <div key={d.id} className="p-3.5 bg-white dark:bg-slate-950 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="text-slate-500 dark:text-slate-400 font-mono">
-                      {new Date(d.measured_at).toLocaleDateString('pt-BR')}
+                      {new Date(d.measured_at).toLocaleDateString(localeStr)}
                     </span>
                     <span className="font-bold text-slate-900 dark:text-white font-mono">
                       {d.value} {d.unit}
@@ -237,14 +241,10 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
                       ? "bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
                       : "bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
                   }`}>
-                    {d.status === 'normal' ? 'Normal' : 'Atenção'}
+                    {d.status === 'normal' ? dictionary.dashboard.normal : dictionary.dashboard.attention}
                   </span>
                 </div>
               ))}
-            </div>
-          ) : (
-            <div className="p-6 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500">
-              Sem coletas salvas para este marcador. Clique em "Registrar Nova Medição" para adicionar.
             </div>
           )}
         </div>
@@ -254,11 +254,11 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl animate-in zoom-in-95">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">Registrar Nova Medição</h2>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">{iDict.modalTitle}</h2>
 
             <form onSubmit={handleAddSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Indicador</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">{iDict.markerLabel}</label>
                 <select
                   value={name}
                   onChange={(e) => {
@@ -280,7 +280,7 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Valor Medido ({unit})</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">{iDict.valueLabel} ({unit})</label>
                 <input
                   type="number"
                   step="0.1"
@@ -297,13 +297,13 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
                   onClick={() => setShowAddModal(false)}
                   className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                 >
-                  Cancelar
+                  {dictionary.common.cancel}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
                 >
-                  Salvar Medição
+                  {iDict.saveBtn}
                 </button>
               </div>
             </form>

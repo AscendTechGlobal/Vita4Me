@@ -15,6 +15,7 @@ import {
 import { HealthAIChatMessage, LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember } from "../types";
 import { getAuthHeaders } from "../lib/apiClient";
 import { trackAiUsage } from "../lib/analytics";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface HealthAIChatViewProps {
   activeMember: FamilyMember | null;
@@ -105,12 +106,16 @@ export const HealthAIChatView: React.FC<HealthAIChatViewProps> = ({
   onOpenBillingModal,
   onBack,
 }) => {
+  const { dictionary, language } = useLanguage();
+  const cDict = dictionary.chat;
+  const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
+
   const [messages, setMessages] = useState<HealthAIChatMessage[]>([
     {
       id: "msg-welcome",
       sender: "assistant",
-      content: `Olá! Sou o Assistente Clínico Inteligente do Vita4Me. Tenho acesso seguro ao prontuário de ${activeMember?.name || 'você'} para ajudar a entender seus laudos, esclarecer termos médicos, comparar biomarcadores e resumir seu histórico de saúde.\n\nComo posso ajudar você hoje?`,
-      timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      content: cDict.welcomeMessage,
+      timestamp: new Date().toLocaleTimeString(localeStr, { hour: '2-digit', minute: '2-digit' }),
     }
   ]);
   const [inputMessage, setInputMessage] = useState("");
@@ -221,10 +226,9 @@ export const HealthAIChatView: React.FC<HealthAIChatViewProps> = ({
   };
 
   const quickPrompts = [
-    "Resuma meus últimos exames laboratoriais",
-    "Como está o meu nível de colesterol?",
-    "Quais remédios contínuos estou tomando?",
-    "Identifique alguma alteração nos meus indicadores recentes",
+    cDict.prompt1,
+    cDict.prompt2,
+    cDict.prompt3,
   ];
 
   return (
@@ -237,28 +241,24 @@ export const HealthAIChatView: React.FC<HealthAIChatViewProps> = ({
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white dark:bg-[#181818] hover:bg-slate-100 dark:hover:bg-[#252525] text-slate-700 dark:text-[#b3b3b3] hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-[#282828] text-xs font-semibold transition-all cursor-pointer shadow-2xs hover:shadow-xs"
           >
             <ArrowLeft className="w-3.5 h-3.5 text-emerald-600 dark:text-[#1DB954]" />
-            <span>Voltar ao Prontuário</span>
+            <span>{cDict.backToDashboard}</span>
           </button>
 
           <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/40 text-emerald-700 dark:text-[#1DB954] rounded-full text-xs font-medium font-mono shadow-2xs">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Prontuário Ativo &bull; {activeMember?.name || 'Titular'}</span>
+            <span>{dictionary.dashboard.activeRecord} &bull; {activeMember?.name || dictionary.dashboard.primaryHolder}</span>
           </span>
         </div>
 
         {/* Clinical Safety & Disclaimer Capsule */}
         <div className="px-3.5 py-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-800 dark:text-amber-300/90 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold text-[9px] uppercase tracking-wider shrink-0">
-              Aviso Clínico
-            </span>
             <span className="leading-snug">
-              O assistente organiza dados do seu prontuário e esclarece dúvidas. 
-              <span className="font-semibold underline ml-1">Não substitui consultas médicas nem fornece diagnósticos.</span>
+              {cDict.disclaimer}
             </span>
           </div>
           <span className="text-[10px] text-amber-600/80 dark:text-amber-400/80 font-mono hidden md:inline shrink-0">
-            CFM &bull; LGPD
+            CFM &bull; LGPD &bull; HIPAA
           </span>
         </div>
       </div>
@@ -400,7 +400,7 @@ export const HealthAIChatView: React.FC<HealthAIChatViewProps> = ({
             type="text"
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder="Pergunte sobre seus exames, medicamentos, sintomas ou histórico..."
+            placeholder={cDict.placeholder}
             disabled={isLoading}
             className="flex-1 bg-transparent border-0 px-3.5 py-2 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-text-[#727272] focus:outline-none disabled:opacity-60"
           />

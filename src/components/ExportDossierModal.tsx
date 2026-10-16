@@ -100,10 +100,10 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
 
   // Dados Antropométricos e Demográficos
   const memberName = activeMember?.name || profile?.full_name || 'Paciente';
-  const bloodType = activeMember?.blood_type || profile?.blood_type || 'Não informado';
+  const bloodType = activeMember?.blood_type || profile?.blood_type || dictionary.dossier.notInformed;
   const allergies = activeMember?.allergies?.length 
     ? activeMember.allergies 
-    : (profile?.allergies?.length ? profile.allergies : ['Nenhuma alergia relatada']);
+    : (profile?.allergies?.length ? profile.allergies : [dictionary.dossier.noAllergies]);
   const chronicConditions = activeMember?.chronic_conditions?.length 
     ? activeMember.chronic_conditions 
     : (profile?.chronic_conditions?.length ? profile.chronic_conditions : []);
@@ -127,17 +127,17 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
   };
   const age = calculateAge(birthDate);
 
-  const gender = activeMember?.gender || profile?.gender || 'Não informado';
+  const gender = activeMember?.gender || profile?.gender || dictionary.dossier.notInformed;
   const weight = activeMember?.weight_kg || profile?.weight_kg;
   const height = activeMember?.height_cm || profile?.height_cm;
 
   const imc = (weight && height) ? Number((weight / ((height / 100) ** 2)).toFixed(1)) : null;
   const getImcClassification = (val: number) => {
-    if (val < 18.5) return 'Baixo peso';
-    if (val < 25) return 'Eutrofia (Peso Normal)';
-    if (val < 30) return 'Sobrepeso';
-    if (val < 35) return 'Obesidade Grau I';
-    return 'Obesidade Grau II/III';
+    if (val < 18.5) return dictionary.dossier.underweight;
+    if (val < 25) return dictionary.dossier.normalWeight;
+    if (val < 30) return dictionary.dossier.overweight;
+    if (val < 35) return dictionary.dossier.obesity1;
+    return dictionary.dossier.obesity23;
   };
 
   const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
@@ -232,14 +232,14 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
             {exportSuccess && (
               <span className="hidden sm:flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950 px-3 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800">
                 <CheckCircle2 className="w-4 h-4" />
-                Dossiê baixado com sucesso!
+                {dictionary.dossier.downloadSuccess}
               </span>
             )}
 
             <button
               onClick={handlePrint}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition cursor-pointer shadow-xs border border-slate-200 dark:border-slate-700"
-              title="Imprimir documento ou salvar pelo navegador"
+              title={dictionary.dossier.printTooltip}
             >
               <Printer className="w-4 h-4 text-slate-600 dark:text-slate-300" />
               <span>{dictionary.common.print}</span>
@@ -298,8 +298,8 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
               </div>
 
               <div className="text-right text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-200 shrink-0">
-                <div><strong>{dictionary.dossier.issueDate}</strong> {new Date().toLocaleDateString(localeStr)} às {new Date().toLocaleTimeString(localeStr, { hour: '2-digit', minute: '2-digit' })}</div>
-                <div className="text-[10px] text-emerald-700 font-mono font-bold">PROTOCOLO: V4M-{Date.now().toString(36).toUpperCase()}</div>
+                <div><strong>{dictionary.dossier.issueDate}</strong> {new Date().toLocaleDateString(localeStr)} {language === 'pt' ? 'às' : (language === 'es' ? 'a las' : 'at')} {new Date().toLocaleTimeString(localeStr, { hour: '2-digit', minute: '2-digit' })}</div>
+                <div className="text-[10px] text-emerald-700 font-mono font-bold">{dictionary.dossier.protocol}: V4M-{Date.now().toString(36).toUpperCase()}</div>
               </div>
             </div>
 
@@ -367,11 +367,11 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                 <table className="w-full text-xs text-left border border-slate-200 rounded-lg overflow-hidden">
                   <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase">
                     <tr>
-                      <th className="p-2 border-b">Indicador</th>
-                      <th className="p-2 border-b">Última Medição</th>
-                      <th className="p-2 border-b">Valor Aferido</th>
-                      <th className="p-2 border-b">Faixa de Referência</th>
-                      <th className="p-2 border-b">Avaliação</th>
+                      <th className="p-2 border-b">{dictionary.dossier.indicatorCol}</th>
+                      <th className="p-2 border-b">{dictionary.dossier.lastMeasuredCol}</th>
+                      <th className="p-2 border-b">{dictionary.dossier.valueCol}</th>
+                      <th className="p-2 border-b">{dictionary.dossier.referenceCol}</th>
+                      <th className="p-2 border-b">{dictionary.dossier.evalCol}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -384,10 +384,10 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                         </td>
                         <td className="p-2 text-slate-500 text-[11px]">
                           {i.reference_min !== undefined && i.reference_max !== undefined && i.reference_min !== null && i.reference_max !== null
-                            ? `${i.reference_min} a ${i.reference_max} ${i.unit}`
+                            ? `${i.reference_min} ${dictionary.dossier.to} ${i.reference_max} ${i.unit}`
                             : (i.reference_max !== undefined && i.reference_max !== null
-                                ? `Até ${i.reference_max} ${i.unit}`
-                                : 'Conforme laudo laboratorial')}
+                                ? `${dictionary.dossier.upTo} ${i.reference_max} ${i.unit}`
+                                : dictionary.dossier.perLabReport)}
                         </td>
                         <td className="p-2">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -395,7 +395,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                               ? 'bg-emerald-100 text-emerald-800' 
                               : 'bg-amber-100 text-amber-800'
                           }`}>
-                            {i.status === 'normal' ? 'Normal' : 'Atenção / Alterado'}
+                            {i.status === 'normal' ? dictionary.dossier.normalEval : dictionary.dossier.attentionEval}
                           </span>
                         </td>
                       </tr>
@@ -420,10 +420,10 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                 <table className="w-full text-xs text-left border border-slate-200 rounded-lg overflow-hidden">
                   <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase">
                     <tr>
-                      <th className="p-2 border-b">Medicamento</th>
-                      <th className="p-2 border-b">Dosagem</th>
-                      <th className="p-2 border-b">Frequência / Horários</th>
-                      <th className="p-2 border-b">Prescritor</th>
+                      <th className="p-2 border-b">{dictionary.dossier.medicationCol}</th>
+                      <th className="p-2 border-b">{dictionary.dossier.dosageCol}</th>
+                      <th className="p-2 border-b">{dictionary.dossier.frequencyCol}</th>
+                      <th className="p-2 border-b">{dictionary.dossier.prescriberCol}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -432,7 +432,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                         <td className="p-2 font-bold text-slate-950">{m.name}</td>
                         <td className="p-2">{m.dosage}</td>
                         <td className="p-2">{m.frequency}</td>
-                        <td className="p-2 text-slate-600">{m.prescribed_by || 'Médico Assistente'}</td>
+                        <td className="p-2 text-slate-600">{m.prescribed_by || dictionary.dossier.attendingDoctor}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -465,7 +465,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                         </div>
                       </div>
                       <p className="text-slate-700 leading-relaxed text-[11px]">
-                        {e.ai_simple_translation || e.ai_summary || "Exame arquivado sem achados clínicos anômalos relatados."}
+                        {e.ai_simple_translation || e.ai_summary || dictionary.dossier.noExamFindings}
                       </p>
                       {e.ai_key_findings && e.ai_key_findings.length > 0 && (
                         <div className="pt-1 flex flex-wrap gap-1.5">
@@ -499,7 +499,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                     <div key={r.id} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs flex items-start justify-between gap-4">
                       <div className="space-y-0.5">
                         <strong className="text-slate-950 font-bold block">{r.title}</strong>
-                        <p className="text-slate-600 text-[11px]">{r.description || r.doctor_notes || 'Sem observações adicionais.'}</p>
+                        <p className="text-slate-600 text-[11px]">{r.description || r.doctor_notes || dictionary.dossier.noRecordNotes}</p>
                       </div>
                       <span className="text-[10px] font-mono text-slate-500 shrink-0">{formatDate(r.event_date)}</span>
                     </div>
@@ -518,15 +518,15 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
 
                 <div className="grid grid-cols-3 gap-3 text-xs">
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">HIDRATAÇÃO:</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">{dictionary.dossier.hydration}</span>
                     <strong className="text-slate-950 text-sm">{todayHabit.water_ml} ml</strong>
                   </div>
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">SONO:</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">{dictionary.dossier.sleepHabit}</span>
                     <strong className="text-slate-950 text-sm">{todayHabit.sleep_hours} h</strong>
                   </div>
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">EXERCÍCIO:</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">{dictionary.dossier.exerciseHabit}</span>
                     <strong className="text-slate-950 text-sm">{todayHabit.exercise_minutes} min</strong>
                   </div>
                 </div>

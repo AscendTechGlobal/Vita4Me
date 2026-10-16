@@ -31,6 +31,7 @@ import { LabExam, FamilyMember, HealthIndicator } from "../types";
 import { getAuthHeaders } from "../lib/apiClient";
 import { saveExam, deleteExam, saveIndicator } from "../lib/healthStorage";
 import { trackEvent, trackAiUsage } from "../lib/analytics";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface ExamsCentralViewProps {
   exams: LabExam[];
@@ -51,6 +52,9 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
   onRefreshExams,
   onBack,
 }) => {
+  const { dictionary, language } = useLanguage();
+  const eDict = dictionary.exams;
+  const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("Todas");
   const [selectedMemberFilter, setSelectedMemberFilter] = useState<string>("all");
@@ -478,17 +482,17 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
         className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 text-xs font-bold transition cursor-pointer shadow-xs"
       >
         <ArrowLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-        <span>Voltar ao Dashboard</span>
+        <span>{eDict.backToDashboard}</span>
       </button>
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
             <FileText className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-            <span>Central de Exames & Laudos com IA</span>
+            <span>{eDict.title}</span>
           </h1>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-            Envie laudos em PDF ou foto para extração automática de biomarcadores e tradução médica em linguagem simples.
+            {eDict.subtitle}
           </p>
         </div>
 
@@ -497,7 +501,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
           className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs transition flex items-center gap-2 cursor-pointer self-start md:self-auto"
         >
           <Upload className="w-4 h-4" />
-          <span>Cadastrar Novo Exame</span>
+          <span>{eDict.uploadBtn}</span>
         </button>
       </div>
 
@@ -505,16 +509,15 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
       <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs">
         <div className="flex items-center gap-2.5">
           <span className="p-1 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] shrink-0 font-mono border border-emerald-200 dark:border-emerald-800">
-            LETRAMENTO MÉDICO
+            HEALTH AI
           </span>
           <span className="text-slate-700 dark:text-slate-300 text-[11px] leading-relaxed">
-            As extrações e traduções por IA têm finalidade de organização pessoal. 
-            <strong> Não substituem o diagnóstico, laudo assinado ou conduta do seu médico.</strong>
+            {dictionary.dossier.disclaimer}
           </span>
         </div>
         <span className="px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[10px] text-emerald-700 dark:text-emerald-400 font-mono shrink-0 flex items-center gap-1.5">
           <Lock className="w-3 h-3 text-emerald-600" />
-          <span>Storage Privado &bull; 256-Bit LGPD</span>
+          <span>Storage &bull; 256-Bit</span>
         </span>
       </div>
 
@@ -525,7 +528,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar por título, laboratório ou médico..."
+              placeholder={eDict.searchPlaceholder}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition"

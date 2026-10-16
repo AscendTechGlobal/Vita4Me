@@ -12,6 +12,7 @@ import {
 import { Medication, FamilyMember } from "../types";
 import { saveMedication, deleteMedication } from "../lib/healthStorage";
 import { trackEvent } from "../lib/analytics";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface MedicationsViewProps {
   medications: Medication[];
@@ -26,6 +27,8 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
   onRefreshMedications,
   onBack,
 }) => {
+  const { dictionary } = useLanguage();
+  const mDict = dictionary.medications;
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Form State
@@ -81,7 +84,7 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
         className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 text-xs font-bold transition cursor-pointer shadow-xs"
       >
         <ArrowLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-        <span>Voltar ao Dashboard</span>
+        <span>{mDict.backToDashboard}</span>
       </button>
 
       {/* Header */}
@@ -89,10 +92,10 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
             <Pill className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-            <span>Medicamentos & Lembretes de Posologia</span>
+            <span>{mDict.title}</span>
           </h1>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-            Controle de remédios de uso contínuo e tratamentos pontuais com alertas de horário para {activeMember?.name || 'você'}.
+            {mDict.subtitle}
           </p>
         </div>
 
@@ -101,7 +104,7 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
           className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs transition flex items-center gap-2 cursor-pointer self-start md:self-auto"
         >
           <Plus className="w-4 h-4" />
-          <span>Cadastrar Medicamento</span>
+          <span>{mDict.registerBtn}</span>
         </button>
       </div>
 
@@ -117,7 +120,7 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="px-2.5 py-0.5 rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-300">
-                  {med.is_continuous ? "USO CONTÍNUO" : "TRATAMENTO"}
+                  {med.is_continuous ? mDict.continuousUse : mDict.treatment}
                 </span>
 
                 <span className="px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-xs flex items-center gap-1.5">
@@ -133,13 +136,13 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
 
               {med.instructions && (
                 <p className="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 leading-relaxed">
-                  <strong>Instruções:</strong> {med.instructions}
+                  <strong>{mDict.instructions}:</strong> {med.instructions}
                 </p>
               )}
 
               {med.prescribed_by && (
                 <div className="text-[11px] text-slate-500">
-                  Prescrito por: <span className="text-slate-700 dark:text-slate-300">{med.prescribed_by}</span>
+                  {mDict.prescribedBy}: <span className="text-slate-700 dark:text-slate-300">{med.prescribed_by}</span>
                 </div>
               )}
             </div>
@@ -155,17 +158,18 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
                 }`}
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>{med.is_active ? "Em Uso" : "Pausado"}</span>
+                <span>{med.is_active ? mDict.inUse : mDict.paused}</span>
               </button>
 
               <button
                 onClick={() => {
-                  if (window.confirm("Deseja remover este medicamento?")) {
+                  if (window.confirm("Confirm?")) {
                     deleteMedication(med.id);
                     onRefreshMedications();
                   }
                 }}
                 className="p-1.5 text-slate-400 hover:text-rose-500 transition"
+                title={mDict.delete}
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -181,10 +185,10 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
           </div>
           <div className="space-y-1">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Nenhum medicamento cadastrado
+              {mDict.emptyTitle}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              Cadastre suas receitas e remédios contínuos com dosagem e horários para acompanhamento.
+              {mDict.subtitle}
             </p>
           </div>
           <button
@@ -192,7 +196,7 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
             className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition inline-flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Cadastrar medicamento</span>
+            <span>{mDict.registerBtn}</span>
           </button>
         </div>
       )}
@@ -207,13 +211,13 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
         >
           <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-6 space-y-4 animate-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Novo Medicamento</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">{mDict.modalTitle}</h3>
               <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white">✕</button>
             </div>
 
             <form onSubmit={handleAddSubmit} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Nome do Medicamento *</label>
+                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{mDict.nameLabel} *</label>
                 <input
                   type="text"
                   required
@@ -226,7 +230,7 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Dosagem</label>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{mDict.dosageLabel}</label>
                   <input
                     type="text"
                     value={dosage}
@@ -237,7 +241,7 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Horário Principal</label>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{mDict.timeLabel}</label>
                   <input
                     type="time"
                     value={scheduleTime}
@@ -248,34 +252,34 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Frequência</label>
+                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{mDict.frequencyLabel}</label>
                 <input
                   type="text"
                   value={frequency}
                   onChange={(e) => setFrequency(e.target.value)}
-                  placeholder="Ex: 1x ao dia pela manhã, de 8 em 8 horas"
+                  placeholder="Ex: 1x, 2x, 8/8h..."
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Instruções / Como Tomar</label>
+                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{mDict.instructionsLabel}</label>
                 <input
                   type="text"
                   value={instructions}
                   onChange={(e) => setInstructions(e.target.value)}
-                  placeholder="Ex: Tomar em jejum com água"
+                  placeholder="..."
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Médico Prescritor</label>
+                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{mDict.prescriberLabel}</label>
                 <input
                   type="text"
                   value={prescribedBy}
                   onChange={(e) => setPrescribedBy(e.target.value)}
-                  placeholder="Ex: Dr. Eduardo"
+                  placeholder="Dr..."
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white"
                 />
               </div>
@@ -289,7 +293,7 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
                   className="rounded text-emerald-600 focus:ring-emerald-500"
                 />
                 <label htmlFor="continuousCheck" className="text-xs text-slate-700 dark:text-slate-300">
-                  Medicamento de uso contínuo
+                  {mDict.continuousLabel}
                 </label>
               </div>
 
@@ -299,13 +303,13 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
                   onClick={() => setShowAddModal(false)}
                   className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white"
                 >
-                  Cancelar
+                  {dictionary.common.cancel}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
                 >
-                  Salvar Medicamento
+                  {mDict.saveBtn}
                 </button>
               </div>
             </form>
