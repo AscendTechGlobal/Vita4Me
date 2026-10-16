@@ -130,3 +130,45 @@
 .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #1DB954;
 }
+
+/* ========================================================
+   ESTILOS DE IMPRESSÃO CLÍNICA OFICIAL (DOSSIÊ PDF)
+   ======================================================== */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* Ocultar toda a interface do app, modais, headers e backdrops */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Exibir exclusivamente o container do dossiê médico */
+  #healthai-printable-dossier,
+  #healthai-printable-dossier * {
+    visibility: visible;
+  }
+
+  #healthai-printable-dossier {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm 15mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* Evitar quebras desordenadas em tabelas e seções */
+  .page-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+

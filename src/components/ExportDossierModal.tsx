@@ -11,11 +11,17 @@ import {
   Pill, 
   ShieldCheck,
   User,
-  ArrowLeft
+  ArrowLeft,
+  Printer,
+  Droplet,
+  Moon,
+  AlertTriangle,
+  Clock,
+  Sparkles
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
-import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, UserProfile } from "../types";
+import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, UserProfile, DailyHabit } from "../types";
 
 interface ExportDossierModalProps {
   isOpen: boolean;
@@ -26,6 +32,7 @@ interface ExportDossierModalProps {
   indicators: HealthIndicator[];
   medications: Medication[];
   records: HealthRecord[];
+  todayHabit?: DailyHabit;
 }
 
 export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
@@ -37,15 +44,109 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
   indicators,
   medications,
   records,
+  todayHabit,
 }) => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
 
   if (!isOpen) return null;
 
+  // Isolamento estrito por Membro Familiar selecionado
+  const memberExams = exams.filter(e => {
+    if (!activeMember || activeMember.id === 'fam-me') {
+      return !e.family_member_id || e.family_member_id === 'fam-me';
+    }
+    return e.family_member_id === activeMember.id;
+  }).sort((a, b) => {
+    const timeA = new Date(a.exam_date || a.created_at || 0).getTime();
+    const timeB = new Date(b.exam_date || b.created_at || 0).getTime();
+    return timeB - timeA;
+  });
+
+  const memberIndicators = indicators.filter(i => {
+    if (!activeMember || activeMember.id === 'fam-me') {
+      return !i.family_member_id || i.family_member_id === 'fam-me';
+    }
+    return i.family_member_id === activeMember.id;
+  }).sort((a, b) => {
+    const timeA = new Date(a.measured_at || a.created_at || 0).getTime();
+    const timeB = new Date(b.measured_at || b.created_at || 0).getTime();
+    return timeB - timeA;
+  });
+
+  const activeMeds = medications
+    .filter(m => {
+      if (!activeMember || activeMember.id === 'fam-me') {
+        return !m.family_member_id || m.family_member_id === 'fam-me';
+      }
+      return m.family_member_id === activeMember.id;
+    })
+    .filter(m => m.is_active);
+
+  const memberRecords = records
+    .filter(r => {
+      if (!activeMember || activeMember.id === 'fam-me') {
+        return !r.family_member_id || r.family_member_id === 'fam-me';
+      }
+      return r.family_member_id === activeMember.id;
+    })
+    .sort((a, b) => {
+      const timeA = new Date(a.event_date || a.created_at || 0).getTime();
+      const timeB = new Date(b.event_date || b.created_at || 0).getTime();
+      return timeB - timeA;
+    });
+
+  // Dados Antropométricos e Demográficos
   const memberName = activeMember?.name || profile?.full_name || 'Paciente';
   const bloodType = activeMember?.blood_type || profile?.blood_type || 'Não informado';
-  const allergies = activeMember?.allergies?.length ? activeMember.allergies : ['Nenhuma alergia relatada'];
+  const allergies = activeMember?.allergies?.length 
+    ? activeMember.allergies 
+    : (profile?.allergies?.length ? profile.allergies : ['Nenhuma alergia relatada']);
+  const chronicConditions = activeMember?.chronic_conditions?.length 
+    ? activeMember.chronic_conditions 
+    : (profile?.chronic_conditions?.length ? profile.chronic_conditions : []);
+
+  const birthDate = activeMember?.date_of_birth || profile?.date_of_birth;
+  const calculateAge = (dob?: string) => {
+    if (!dob) return null;
+    try {
+      const birth = new Date(dob);
+      if (isNaN(birth.getTime())) return null;
+      const today = new Date();
+      let age = today.getFullYear() - birth.getFullYear();
+      const m = today.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+        age--;
+      }
+      return age > 0 ? age : null;
+    } catch {
+      return null;
+    }
+  };
+  const age = calculateAge(birthDate);
+
+  const gender = activeMember?.gender || profile?.gender || 'Não informado';
+  const weight = activeMember?.weight_kg || profile?.weight_kg;
+  const height = activeMember?.height_cm || profile?.height_cm;
+
+  const imc = (weight && height) ? Number((weight / ((height / 100) ** 2)).toFixed(1)) : null;
+  const getImcClassification = (val: number) => {
+    if (val < 18.5) return 'Baixo peso';
+    if (val < 25) return 'Eutrofia (Peso Normal)';
+    if (val < 30) return 'Sobrepeso';
+    if (val < 35) return 'Obesidade Grau I';
+    return 'Obesidade Grau II/III';
+  };
+
+  const formatDate = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString.includes('T') ? isoString : `${isoString}T12:00:00Z`);
+      return isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
+    } catch {
+      return '';
+    }
+  };
 
   const handleDownloadPDF = async () => {
     setIsExporting(true);
@@ -56,21 +157,38 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
       const canvas = await html2canvas(docElement, {
         scale: 2,
         useCORS: true,
+        allowTaint: true,
         logging: false,
         backgroundColor: '#ffffff',
       });
 
-      const imgData = canvas.toDataURL("image/png");
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
       const pdf = new jsPDF({
         orientation: "portrait",
         unit: "mm",
         format: "a4",
       });
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Primeira página
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      // Páginas subsequentes se o dossiê exceder a folha A4
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
       const cleanName = memberName.replace(/[^a-zA-Z0-9]/g, '_');
       pdf.save(`Dossie_Medico_Vita4Me_${cleanName}.pdf`);
 
@@ -84,6 +202,10 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
     }
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
     <div 
       className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
@@ -91,18 +213,18 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="relative w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col my-auto">
-        {/* Navigation Bar */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-6 shrink-0">
+      <div className="relative w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-5 md:p-8 animate-in fade-in zoom-in-95 duration-200 max-h-[94vh] flex flex-col my-auto">
+        {/* Navigation & Actions Bar */}
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-4 shrink-0 gap-3">
           <button
             onClick={onClose}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 text-xs font-bold transition cursor-pointer shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 text-xs font-bold transition cursor-pointer shadow-xs"
           >
             <ArrowLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <span>Voltar</span>
           </button>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
             {exportSuccess && (
               <span className="hidden sm:flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950 px-3 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800">
                 <CheckCircle2 className="w-4 h-4" />
@@ -111,19 +233,28 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
             )}
 
             <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition cursor-pointer shadow-xs border border-slate-200 dark:border-slate-700"
+              title="Imprimir documento ou salvar pelo navegador"
+            >
+              <Printer className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+              <span>Imprimir</span>
+            </button>
+
+            <button
               onClick={handleDownloadPDF}
               disabled={isExporting}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer disabled:opacity-50"
             >
               {isExporting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Gerando Dossiê PDF...</span>
+                  <span>Gerando PDF...</span>
                 </>
               ) : (
                 <>
                   <Download className="w-4 h-4" />
-                  <span>Baixar Dossiê Médico (PDF)</span>
+                  <span>Baixar Dossiê PDF</span>
                 </>
               )}
             </button>
@@ -137,111 +268,276 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
           </div>
         </div>
 
-        {/* Printable Preview Document */}
-        <div className="overflow-y-auto custom-scrollbar flex-1 pr-1 bg-slate-50 dark:bg-slate-950/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+        {/* Printable Document Sheet Preview */}
+        <div className="overflow-y-auto custom-scrollbar flex-1 pr-1 bg-slate-100 dark:bg-slate-950/60 p-3 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800">
           <div 
             id="healthai-printable-dossier" 
-            className="bg-white text-slate-900 p-8 md:p-12 rounded-2xl shadow-xl font-sans space-y-6 max-w-3xl mx-auto border border-slate-200"
+            className="bg-white text-slate-900 p-6 md:p-10 rounded-2xl shadow-xl font-sans space-y-6 max-w-3xl mx-auto border border-slate-200"
           >
-            {/* Dossier Header */}
+            {/* Header Oficial do Dossiê */}
             <div className="border-b-2 border-emerald-600 pb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <img
-                  src="/logo-full-transparent.png"
-                  alt="Vita4Me"
-                  className="h-12 w-auto object-contain shrink-0"
-                />
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-xl shadow-md shrink-0">
+                  V4
+                </div>
                 <div className="space-y-0.5">
                   <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-700 font-bold block">
-                    DOSSIÊ MÉDICO DIGITAL OFICIAL &bull; VITA4ME
+                    DOSSIÊ CLÍNICO DIGITAL OFICIAL &bull; VITA4ME
                   </span>
                   <h1 className="text-xl font-black text-slate-950 tracking-tight">
                     Prontuário e Histórico de Saúde
                   </h1>
                   <p className="text-xs text-slate-600">
-                    Documento consolidado para apresentação em consultas e atendimentos médicos.
+                    Documento consolidado para apresentação e suporte em consultas médicas e teleatendimento.
                   </p>
                 </div>
               </div>
 
-              <div className="text-right text-xs bg-slate-50 p-3 rounded-xl border border-slate-200 shrink-0">
-                <div><strong>EMISSÃO:</strong> {new Date().toLocaleDateString('pt-BR')}</div>
-                <div className="text-[11px] text-emerald-700 font-mono font-bold">VITA4ME SEGURO</div>
+              <div className="text-right text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-200 shrink-0">
+                <div><strong>EMISSÃO:</strong> {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+                <div className="text-[10px] text-emerald-700 font-mono font-bold">PROTOCOLO: V4M-{Date.now().toString(36).toUpperCase()}</div>
               </div>
             </div>
 
-            {/* Patient Information Box */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">PACIENTE:</span>
-                <strong className="text-slate-950 font-bold">{memberName}</strong>
+            {/* Quadro Completo de Identificação do Paciente & Biometria */}
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 text-xs page-break-inside-avoid">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">PACIENTE:</span>
+                  <strong className="text-slate-950 font-bold text-sm">{memberName}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">SEXO / IDADE:</span>
+                  <strong className="text-slate-900">
+                    {gender} {age ? `• ${age} anos` : (birthDate ? `• ${formatDate(birthDate)}` : '')}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">TIPO SANGUÍNEO:</span>
+                  <strong className="text-emerald-700 font-bold">{bloodType}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">PESO / ALTURA:</span>
+                  <strong className="text-slate-900">
+                    {weight ? `${weight} kg` : '--'} {height ? `• ${height} cm` : ''}
+                  </strong>
+                </div>
               </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">TIPO SANGUÍNEO:</span>
-                <strong className="text-emerald-700 font-bold">{bloodType}</strong>
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">ALERGIAS RELATADAS:</span>
-                <strong className="text-rose-700 font-bold">{allergies.join(', ')}</strong>
-              </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">STATUS DE VACINAÇÃO:</span>
-                <strong className="text-emerald-600 font-bold">Atualizada (2026)</strong>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">IMC ESTIMADO:</span>
+                  {imc ? (
+                    <strong className="text-slate-900">
+                      {imc} kg/m² <span className="text-[11px] text-slate-600 font-normal">({getImcClassification(imc)})</span>
+                    </strong>
+                  ) : (
+                    <span className="text-slate-500">Não calculado</span>
+                  )}
+                </div>
+
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">ALERGIAS RELATADAS:</span>
+                  <strong className={allergies.some(a => !a.toLowerCase().includes('nenhuma')) ? 'text-rose-700 font-bold' : 'text-slate-700'}>
+                    {allergies.join(', ')}
+                  </strong>
+                </div>
+
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">CONDIÇÕES CRÔNICAS:</span>
+                  <strong className="text-slate-900">
+                    {chronicConditions.length ? chronicConditions.join(', ') : 'Nenhuma relatada'}
+                  </strong>
+                </div>
               </div>
             </div>
 
-            {/* Active Continuous Medications */}
-            <div className="space-y-2">
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
-                <Pill className="w-4 h-4 text-emerald-600" />
-                <span>1. Medicamentos em Uso Contínuo</span>
-              </h3>
-              <table className="w-full text-xs text-left border border-slate-200 rounded-lg overflow-hidden">
-                <thead className="bg-slate-100 text-slate-700 text-[11px] uppercase">
-                  <tr>
-                    <th className="p-2 border-b">Medicamento</th>
-                    <th className="p-2 border-b">Dosagem</th>
-                    <th className="p-2 border-b">Frequência</th>
-                    <th className="p-2 border-b">Prescritor</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {medications.map(m => (
-                    <tr key={m.id}>
-                      <td className="p-2 font-bold text-slate-950">{m.name}</td>
-                      <td className="p-2">{m.dosage}</td>
-                      <td className="p-2">{m.frequency}</td>
-                      <td className="p-2 text-slate-600">{m.prescribed_by || 'Médico Assistente'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Latest Lab Exams & AI Translations */}
-            <div className="space-y-2">
+            {/* SEÇÃO 1: SINAIS VITAIS & INDICADORES CLÍNICOS DO DASHBOARD */}
+            <div className="space-y-2 page-break-inside-avoid">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
                 <Activity className="w-4 h-4 text-emerald-600" />
-                <span>2. Últimos Exames e Achados Laboratoriais</span>
+                <span>1. Indicadores Clínicos & Sinais Vitais Monitorados</span>
               </h3>
-              <div className="space-y-3">
-                {exams.slice(0, 3).map(e => (
-                  <div key={e.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
-                    <div className="flex justify-between items-center">
-                      <strong className="text-slate-950 font-bold">{e.title}</strong>
-                      <span className="text-[11px] text-slate-500 font-mono">{e.exam_date}</span>
-                    </div>
-                    <p className="text-slate-700 leading-relaxed text-[11px]">
-                      {e.ai_simple_translation || e.ai_summary}
-                    </p>
-                  </div>
-                ))}
-              </div>
+
+              {memberIndicators.length > 0 ? (
+                <table className="w-full text-xs text-left border border-slate-200 rounded-lg overflow-hidden">
+                  <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase">
+                    <tr>
+                      <th className="p-2 border-b">Indicador</th>
+                      <th className="p-2 border-b">Última Medição</th>
+                      <th className="p-2 border-b">Valor Aferido</th>
+                      <th className="p-2 border-b">Faixa de Referência</th>
+                      <th className="p-2 border-b">Avaliação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {memberIndicators.map(i => (
+                      <tr key={i.id} className="hover:bg-slate-50">
+                        <td className="p-2 font-bold text-slate-950">{i.name}</td>
+                        <td className="p-2 text-slate-500 font-mono text-[11px]">{formatDate(i.measured_at)}</td>
+                        <td className="p-2 font-mono font-bold text-slate-900">
+                          {i.value} <span className="text-[11px] font-normal text-slate-600">{i.unit}</span>
+                        </td>
+                        <td className="p-2 text-slate-500 text-[11px]">
+                          {i.reference_min !== undefined && i.reference_max !== undefined && i.reference_min !== null && i.reference_max !== null
+                            ? `${i.reference_min} a ${i.reference_max} ${i.unit}`
+                            : (i.reference_max !== undefined && i.reference_max !== null
+                                ? `Até ${i.reference_max} ${i.unit}`
+                                : 'Conforme laudo laboratorial')}
+                        </td>
+                        <td className="p-2">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            i.status === 'normal' 
+                              ? 'bg-emerald-100 text-emerald-800' 
+                              : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {i.status === 'normal' ? 'Normal' : 'Atenção / Alterado'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 italic">
+                  Nenhum indicador vital registrado no prontuário do paciente no momento.
+                </div>
+              )}
             </div>
 
-            {/* Ethical Disclaimer */}
-            <div className="border-t border-slate-200 pt-3 text-[10px] text-slate-500 leading-relaxed italic">
-              <strong>Aviso Ético e Legal:</strong> O Vita4Me atua como ferramenta de apoio à organização de dados médicos e compreensão de laudos pelo próprio paciente. As informações contidas neste dossiê não substituem avaliação clínica, diagnóstico ou conduta médica profissional.
+            {/* SEÇÃO 2: MEDICAMENTOS EM USO CONTÍNUO */}
+            <div className="space-y-2 page-break-inside-avoid">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                <Pill className="w-4 h-4 text-emerald-600" />
+                <span>2. Medicamentos em Uso Ativo / Contínuo</span>
+              </h3>
+
+              {activeMeds.length > 0 ? (
+                <table className="w-full text-xs text-left border border-slate-200 rounded-lg overflow-hidden">
+                  <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase">
+                    <tr>
+                      <th className="p-2 border-b">Medicamento</th>
+                      <th className="p-2 border-b">Dosagem</th>
+                      <th className="p-2 border-b">Frequência / Horários</th>
+                      <th className="p-2 border-b">Prescritor</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {activeMeds.map(m => (
+                      <tr key={m.id} className="hover:bg-slate-50">
+                        <td className="p-2 font-bold text-slate-950">{m.name}</td>
+                        <td className="p-2">{m.dosage}</td>
+                        <td className="p-2">{m.frequency}</td>
+                        <td className="p-2 text-slate-600">{m.prescribed_by || 'Médico Assistente'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 italic">
+                  Nenhum medicamento contínuo em uso ativo registrado.
+                </div>
+              )}
+            </div>
+
+            {/* SEÇÃO 3: ÚLTIMOS LAUDOS E EXAMES LABORATORIAIS COM TRADUÇÃO DA IA */}
+            <div className="space-y-2 page-break-inside-avoid">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                <FileText className="w-4 h-4 text-emerald-600" />
+                <span>3. Últimos Laudos & Exames Laboratoriais</span>
+              </h3>
+
+              {memberExams.length > 0 ? (
+                <div className="space-y-2.5">
+                  {memberExams.slice(0, 4).map(e => (
+                    <div key={e.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
+                      <div className="flex justify-between items-center">
+                        <strong className="text-slate-950 font-bold">{e.title}</strong>
+                        <div className="flex items-center gap-2">
+                          {e.laboratory && (
+                            <span className="text-[11px] text-slate-600 font-medium">Lab: {e.laboratory}</span>
+                          )}
+                          <span className="text-[11px] text-slate-500 font-mono">Data: {formatDate(e.exam_date)}</span>
+                        </div>
+                      </div>
+                      <p className="text-slate-700 leading-relaxed text-[11px]">
+                        {e.ai_simple_translation || e.ai_summary || "Exame arquivado sem achados clínicos anômalos relatados."}
+                      </p>
+                      {e.ai_key_findings && e.ai_key_findings.length > 0 && (
+                        <div className="pt-1 flex flex-wrap gap-1.5">
+                          {e.ai_key_findings.slice(0, 3).map((k, i) => (
+                            <span key={i} className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md font-medium">
+                              • {k}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 italic">
+                  Nenhum exame laboratorial cadastrado no prontuário do paciente no período.
+                </div>
+              )}
+            </div>
+
+            {/* SEÇÃO 4: HISTÓRICO CLÍNICO & CIRURGIAS / INTERNAÇÕES */}
+            {memberRecords.length > 0 && (
+              <div className="space-y-2 page-break-inside-avoid">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>4. Linha do Tempo & Histórico Clínico</span>
+                </h3>
+
+                <div className="space-y-2">
+                  {memberRecords.slice(0, 3).map(r => (
+                    <div key={r.id} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs flex items-start justify-between gap-4">
+                      <div className="space-y-0.5">
+                        <strong className="text-slate-950 font-bold block">{r.title}</strong>
+                        <p className="text-slate-600 text-[11px]">{r.description || r.doctor_notes || 'Sem observações adicionais.'}</p>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500 shrink-0">{formatDate(r.event_date)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* SEÇÃO 5: HÁBITOS DE VIDA & ROTINA DIÁRIA */}
+            {todayHabit && (
+              <div className="space-y-2 page-break-inside-avoid">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                  <Heart className="w-4 h-4 text-emerald-600" />
+                  <span>5. Rotina e Hábitos de Saúde do Paciente</span>
+                </h3>
+
+                <div className="grid grid-cols-3 gap-3 text-xs">
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">HIDRATAÇÃO DIÁRIA:</span>
+                    <strong className="text-slate-950 text-sm">{todayHabit.water_ml} ml</strong>
+                  </div>
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">SONO REGULAR:</span>
+                    <strong className="text-slate-950 text-sm">{todayHabit.sleep_hours} horas/noite</strong>
+                  </div>
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">ATIVIDADE FÍSICA:</span>
+                    <strong className="text-slate-950 text-sm">{todayHabit.exercise_minutes} min/dia</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Rodapé Ético, Jurídico e Espaço para Anotações Médicas */}
+            <div className="border-t border-slate-200 pt-3 space-y-2 text-[10px] text-slate-500 leading-relaxed page-break-inside-avoid">
+              <p className="italic">
+                <strong>Aviso Ético e Regulatório:</strong> O Vita4Me atua como ferramenta digital de organização e prontuário pessoal do próprio paciente. As análises de inteligência artificial são sintetizadas exclusivamente a partir dos documentos anexados pelo titular e não constituem consulta médica, diagnóstico conclusivo ou prescrição farmacológica independente.
+              </p>
+              <div className="flex justify-between items-center pt-2 text-[9px] text-slate-400 font-mono">
+                <span>VITA4ME DIGITAL HEALTH SYSTEM &bull; LGPD COMPLIANT</span>
+                <span>Página autenticada pelo titular em {new Date().toLocaleDateString('pt-BR')}</span>
+              </div>
             </div>
           </div>
         </div>

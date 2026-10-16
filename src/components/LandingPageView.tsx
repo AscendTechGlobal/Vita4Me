@@ -41,6 +41,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 }) => {
   const { user } = useAuth();
   const [billingInterval, setBillingInterval] = useState<"monthly" | "yearly">("monthly");
+  const [billingRegion, setBillingRegion] = useState<"brasil" | "exterior">("brasil");
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
   const [isScrolled, setIsScrolled] = useState(false);
   const [legalModalTab, setLegalModalTab] = useState<LegalTab | null>(null);
@@ -554,8 +555,35 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               Comece com <strong>7 dias de teste gratuito</strong>. Sem taxa de cancelamento, cancele quando quiser.
             </p>
 
-            {/* Monthly / Yearly Switcher */}
-            <div className="pt-2 flex items-center justify-center">
+            {/* Country / Region & Monthly / Yearly Switcher */}
+            <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+              {/* Region Switcher */}
+              <div className="flex bg-[#061F18] p-1.5 rounded-2xl border border-[#126D4A] items-center gap-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setBillingRegion("brasil")}
+                  className={`px-4 py-2 rounded-xl font-bold transition cursor-pointer ${
+                    billingRegion === "brasil"
+                      ? "bg-[#7AC943] text-[#0A3B2E] shadow-sm"
+                      : "text-[#CDEBC5] hover:text-white"
+                  }`}
+                >
+                  🇧🇷 Brasil (BRL)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingRegion("exterior")}
+                  className={`px-4 py-2 rounded-xl font-bold transition cursor-pointer ${
+                    billingRegion === "exterior"
+                      ? "bg-[#7AC943] text-[#0A3B2E] shadow-sm"
+                      : "text-[#CDEBC5] hover:text-white"
+                  }`}
+                >
+                  🌍 Exterior (USD)
+                </button>
+              </div>
+
+              {/* Monthly / Yearly Switcher */}
               <div className="flex bg-[#061F18] p-1.5 rounded-2xl border border-[#126D4A] items-center gap-1 text-xs">
                 <button
                   type="button"
@@ -591,7 +619,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             
             {HEALTH_PRICING_PLANS.map((plan: PricingPlan) => {
               const isPopular = plan.highlight;
-              const price = billingInterval === "yearly" ? plan.priceYearlyMonthlyEquivalent : plan.priceMonthly;
+              const isUsd = billingRegion === "exterior";
+              const currency = isUsd ? "$" : "R$";
+              const monthlyVal = isUsd ? plan.priceMonthlyUsd : plan.priceMonthly;
+              const yearlyEquivVal = isUsd ? plan.priceYearlyMonthlyEquivalentUsd : plan.priceYearlyMonthlyEquivalent;
+              const annualTotal = isUsd ? Number((yearlyEquivVal * 12).toFixed(2)) : yearlyEquivVal * 12;
+              const annualOriginal = isUsd ? Number((monthlyVal * 12).toFixed(2)) : monthlyVal * 12;
+              const savings = isUsd ? Number((annualOriginal - annualTotal).toFixed(2)) : annualOriginal - annualTotal;
+
+              const formatVal = (val: number) => isUsd ? val.toFixed(2) : String(val);
 
               return (
                 <div
@@ -630,24 +666,24 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                           {/* Valor cheio anual riscado + Economia */}
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs text-[#CDEBC5]/60 line-through font-mono">
-                              De R$ {plan.priceMonthly * 12}/ano
+                              De {currency} {formatVal(annualOriginal)}/ano
                             </span>
                             <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-[#7AC943]/20 text-[#7AC943] border border-[#7AC943]/30">
-                              Economize R$ {(plan.priceMonthly * 12) - (plan.priceYearlyMonthlyEquivalent * 12)}/ano
+                              Economize {currency} {formatVal(savings)}/ano
                             </span>
                           </div>
 
                           {/* Valor anual com desconto em destaque */}
                           <div className="flex items-baseline gap-1.5 flex-wrap">
                             <div className="flex items-baseline gap-1">
-                              <span className="text-sm font-bold text-[#CDEBC5]">R$</span>
+                              <span className="text-sm font-bold text-[#CDEBC5]">{currency}</span>
                               <span className="text-4xl font-black text-white font-mono">
-                                {plan.priceYearlyMonthlyEquivalent * 12}
+                                {formatVal(annualTotal)}
                               </span>
                               <span className="text-xs text-[#CDEBC5]">/ano</span>
                             </div>
                             <span className="text-xs font-bold text-[#7AC943]">
-                              (equivale a R$ {plan.priceYearlyMonthlyEquivalent}/mês)
+                              (equivale a {currency} {formatVal(yearlyEquivVal)}/mês)
                             </span>
                           </div>
 
@@ -658,8 +694,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       ) : (
                         <div className="space-y-1">
                           <div className="flex items-baseline gap-1">
-                            <span className="text-sm font-bold text-[#CDEBC5]">R$</span>
-                            <span className="text-4xl font-black text-white font-mono">{plan.priceMonthly}</span>
+                            <span className="text-sm font-bold text-[#CDEBC5]">{currency}</span>
+                            <span className="text-4xl font-black text-white font-mono">{formatVal(monthlyVal)}</span>
                             <span className="text-xs text-[#CDEBC5]">/mês</span>
                           </div>
                           <span className="text-[11px] text-[#CDEBC5]/70 block">

@@ -158,6 +158,8 @@ export interface PricingPlan {
   description: string;
   priceMonthly: number;
   priceYearlyMonthlyEquivalent: number;
+  priceMonthlyUsd: number;
+  priceYearlyMonthlyEquivalentUsd: number;
   stripePriceIdMonthly?: string;
   stripePriceIdYearly?: string;
   highlight?: boolean;

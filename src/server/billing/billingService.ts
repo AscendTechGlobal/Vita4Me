@@ -255,9 +255,10 @@ export class BillingService {
     }
 
     const isYearly = params.interval === "yearly";
-    const amount = isYearly
-      ? planConfig.yearlyMonthlyEquivalentBrl * 12
-      : planConfig.monthlyBrl;
+    // Preço internacional fixo em USD (Dólar americano) para o Stripe
+    const amountUsd = isYearly
+      ? planConfig.yearlyMonthlyEquivalentUsd * 12
+      : planConfig.monthlyUsd;
 
     // Buscar se usuário já possui stripe_customer_id ou billing_customer_id
     let customerId: string | undefined = undefined;
@@ -280,12 +281,12 @@ export class BillingService {
       line_items: [
         {
           price_data: {
-            currency: "brl",
+            currency: "usd",
             product_data: {
               name: planConfig.name,
-              description: `Acesso completo com Inteligência Artificial e Prontuário Vita4Me (${isYearly ? "Cobrança Anual" : "Cobrança Mensal"})`,
+              description: `Acesso completo com Inteligência Artificial e Prontuário Vita4Me (${isYearly ? "Cobrança Anual em Dólar" : "Cobrança Mensal em Dólar"})`,
             },
-            unit_amount: Math.round(amount * 100),
+            unit_amount: Math.round(amountUsd * 100),
             recurring: {
               interval: isYearly ? "year" : "month",
             },

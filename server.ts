@@ -1773,12 +1773,12 @@ app.post("/api/stripe/create-checkout", optionalAuth, async (req: AuthenticatedR
     const targetPlan = planId === "family" ? "family" : "individual";
     const isYearly = interval === "yearly";
 
-    // Valores oficiais em centavos BRL:
-    // Individual: R$ 29/mês (2900 centavos) ou R$ 276/ano (27600 centavos, R$ 23/mês equivalente)
-    // Família: R$ 59/mês (5900 centavos) ou R$ 564/ano (56400 centavos, R$ 47/mês equivalente)
+    // Valores oficiais internacionais fixos em centavos USD:
+    // Individual: $ 9.90/mês (990 centavos) ou $ 94.80/ano (9480 centavos, $ 7.90/mês equivalente)
+    // Família: $ 19.90/mês (1990 centavos) ou $ 178.80/ano (17880 centavos, $ 14.90/mês equivalente)
     const unitAmount = targetPlan === "family"
-      ? (isYearly ? 56400 : 5900)
-      : (isYearly ? 27600 : 2900);
+      ? (isYearly ? 17880 : 1990)
+      : (isYearly ? 9480 : 990);
 
     const stripe = getStripeClient();
 
@@ -1803,10 +1803,10 @@ app.post("/api/stripe/create-checkout", optionalAuth, async (req: AuthenticatedR
       line_items: [
         {
           price_data: {
-            currency: "brl",
+            currency: "usd",
             product_data: {
               name: `Vita4Me ${targetPlan === "family" ? "Família (Até 5 Membros)" : "Individual"}`,
-              description: `Assinatura Vita4Me com 7 dias de teste grátis (${isYearly ? "Plano Anual com 20% OFF" : "Plano Mensal"})`,
+              description: `Assinatura Vita4Me com 7 dias de teste grátis (${isYearly ? "Plano Anual em USD com 20% OFF" : "Plano Mensal em USD"})`,
             },
             unit_amount: unitAmount,
             recurring: {

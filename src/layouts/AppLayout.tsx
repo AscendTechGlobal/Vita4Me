@@ -217,6 +217,7 @@ export const AppLayout: React.FC = () => {
             indicators={indicators}
             medications={medications}
             records={records}
+            todayHabit={todayHabit}
           />
         )}
 

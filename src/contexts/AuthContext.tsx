@@ -219,6 +219,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error("Erro no signOut:", err);
       }
     }
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.clear();
+      } catch (e) {
+        // Silencioso
+      }
+    }
     setUser(null);
     setProfile(null);
   };

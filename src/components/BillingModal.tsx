@@ -150,16 +150,16 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
 
     setLoadingPlanId(plan.id);
     try {
-      const price =
-        interval === "yearly"
-          ? plan.priceYearlyMonthlyEquivalent * 12
-          : plan.priceMonthly;
+      const isUsd = region === "exterior";
+      const monthlyVal = isUsd ? plan.priceMonthlyUsd : plan.priceMonthly;
+      const yearlyEquivVal = isUsd ? plan.priceYearlyMonthlyEquivalentUsd : plan.priceYearlyMonthlyEquivalent;
+      const price = interval === "yearly" ? yearlyEquivVal * 12 : monthlyVal;
 
       trackEvent("checkout_started", {
         plan_tier: plan.id as any,
         billing_interval: interval,
         value: price,
-        currency: "BRL",
+        currency: isUsd ? "USD" : "BRL",
         provider: region === "brasil" ? "asaas" : "stripe",
       });
 
@@ -520,10 +520,16 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
             {/* Pricing Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
               {HEALTH_PRICING_PLANS.map((plan) => {
-                const price =
-                  interval === "yearly"
-                    ? plan.priceYearlyMonthlyEquivalent
-                    : plan.priceMonthly;
+                const isUsd = region === "exterior";
+                const currency = isUsd ? "$" : "R$";
+                const monthlyPrice = isUsd ? plan.priceMonthlyUsd : plan.priceMonthly;
+                const yearlyEquiv = isUsd ? plan.priceYearlyMonthlyEquivalentUsd : plan.priceYearlyMonthlyEquivalent;
+                const annualTotal = Number((yearlyEquiv * 12).toFixed(2));
+                const annualOriginal = Number((monthlyPrice * 12).toFixed(2));
+                const savings = Number((annualOriginal - annualTotal).toFixed(2));
+
+                const formatVal = (val: number) => isUsd ? val.toFixed(2) : String(val);
+
                 const isCurrent =
                   currentTier === plan.id && profile?.subscription_status === "active";
 
@@ -570,24 +576,24 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
                             {/* Valor cheio anual riscado + Economia */}
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs text-slate-400 dark:text-slate-500 line-through font-mono">
-                                De R$ {plan.priceMonthly * 12}/ano
+                                De {currency} {formatVal(annualOriginal)}/ano
                               </span>
                               <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
-                                Economize R$ {(plan.priceMonthly * 12) - (plan.priceYearlyMonthlyEquivalent * 12)}/ano
+                                Economize {currency} {formatVal(savings)}/ano
                               </span>
                             </div>
 
                             {/* Valor anual com desconto em destaque */}
                             <div className="flex items-baseline gap-1.5 flex-wrap">
                               <div className="flex items-baseline gap-0.5">
-                                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">R$</span>
+                                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{currency}</span>
                                 <span className="text-3xl font-black text-slate-900 dark:text-white font-mono">
-                                  {plan.priceYearlyMonthlyEquivalent * 12}
+                                  {formatVal(annualTotal)}
                                 </span>
                                 <span className="text-xs text-slate-500 dark:text-slate-400">/ano</span>
                               </div>
                               <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                                (equivale a R$ {plan.priceYearlyMonthlyEquivalent}/mês)
+                                (equivale a {currency} {formatVal(yearlyEquiv)}/mês)
                               </span>
                             </div>
 
@@ -599,10 +605,10 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
                           <div className="space-y-1">
                             <div className="flex items-baseline gap-1">
                               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                R$
+                                {currency}
                               </span>
                               <span className="text-3xl font-black text-slate-900 dark:text-white font-mono">
-                                {plan.priceMonthly}
+                                {formatVal(monthlyPrice)}
                               </span>
                               <span className="text-xs text-slate-500 dark:text-slate-400">
                                 /mês
