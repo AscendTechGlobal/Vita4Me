@@ -142,6 +142,46 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
 
   const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
 
+  // Tradução dinâmica de nomes de biomarcadores laboratoriais padrão
+  const formatBiomarkerName = (rawName: string) => {
+    if (!rawName) return '';
+    const lower = rawName.toLowerCase();
+    if (language === 'es') {
+      if (lower.includes('colesterol total')) return 'Colesterol total';
+      if (lower.includes('ldl') || lower.includes('colesterol ldl')) return 'Colesterol LDL';
+      if (lower.includes('hdl') || lower.includes('colesterol hdl')) return 'Colesterol HDL';
+      if (lower.includes('triglic')) return 'Triglicéridos';
+      if (lower.includes('glicem') || lower.includes('glicose')) return 'Glucosa';
+      if (lower.includes('vitamina d')) return 'Vitamina D (25-OH)';
+      if (lower.includes('pressão sistólica') || lower.includes('sistolica')) return 'Presión Sistólica';
+      if (lower.includes('pressão diastólica') || lower.includes('diastolica')) return 'Presión Diastólica';
+      if (lower.includes('peso')) return 'Peso corporal';
+      if (lower.includes('ureia') || lower.includes('urea')) return 'Urea';
+      if (lower.includes('creatinina')) return 'Creatinina';
+      if (lower.includes('ácido úrico') || lower.includes('acido urico')) return 'Ácido úrico';
+      if (lower.includes('hemoglobina glicada') || lower.includes('hba1c')) return 'Hemoglobina glicosilada (HbA1c)';
+      if (lower.includes('insulina')) return 'Insulina basal';
+      if (lower.includes('ferritina')) return 'Ferritina';
+    } else if (language === 'en') {
+      if (lower.includes('colesterol total')) return 'Total Cholesterol';
+      if (lower.includes('ldl') || lower.includes('colesterol ldl')) return 'LDL Cholesterol';
+      if (lower.includes('hdl') || lower.includes('colesterol hdl')) return 'HDL Cholesterol';
+      if (lower.includes('triglic')) return 'Triglycerides';
+      if (lower.includes('glicem') || lower.includes('glicose')) return 'Fasting Blood Glucose';
+      if (lower.includes('vitamina d')) return 'Vitamin D (25-OH)';
+      if (lower.includes('pressão sistólica') || lower.includes('sistolica')) return 'Systolic Blood Pressure';
+      if (lower.includes('pressão diastólica') || lower.includes('diastolica')) return 'Diastolic Blood Pressure';
+      if (lower.includes('peso')) return 'Body Weight';
+      if (lower.includes('ureia') || lower.includes('urea')) return 'Urea / BUN';
+      if (lower.includes('creatinina')) return 'Creatinine';
+      if (lower.includes('ácido úrico') || lower.includes('acido urico')) return 'Uric Acid';
+      if (lower.includes('hemoglobina glicada') || lower.includes('hba1c')) return 'Glycated Hemoglobin (HbA1c)';
+      if (lower.includes('insulina')) return 'Fasting Insulin';
+      if (lower.includes('ferritina')) return 'Ferritin';
+    }
+    return rawName;
+  };
+
   const formatDate = (isoString?: string) => {
     if (!isoString) return '';
     try {
@@ -158,15 +198,18 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
       const docElement = document.getElementById("healthai-printable-dossier");
       if (!docElement) throw new Error("Elemento do dossiê não encontrado");
 
+      // Clonar e garantir renderização sem interferência de scroll de container
       const canvas = await html2canvas(docElement, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
         logging: false,
         backgroundColor: '#ffffff',
+        windowWidth: 1200,
+        scrollX: 0,
+        scrollY: 0,
       });
 
-      const imgData = canvas.toDataURL("image/jpeg", 0.95);
       const pdf = new jsPDF({
         orientation: "portrait",
         unit: "mm",
@@ -178,29 +221,58 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
       const imgWidth = pageWidth;
       const imgHeight = (canvas.height * pageWidth) / canvas.width;
 
+      // Se couber em uma página ou se precisar de múltiplas páginas com fatiamento exato
       let heightLeft = imgHeight;
       let position = 0;
 
       // Primeira página
-      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+      const pageCanvasHeight = (canvas.width * pageHeight) / pageWidth;
 
-      // Páginas subsequentes se o dossiê exceder a folha A4
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+      if (imgHeight <= pageHeight) {
+        const imgData = canvas.toDataURL("image/jpeg", 0.96);
+        pdf.addImage(imgData, "JPEG", 0, 0, imgWidth, imgHeight);
+      } else {
+        // Multi-página por fatiamento limpo de canvas
+        let renderedHeight = 0;
+        let pageIdx = 0;
+
+        while (renderedHeight < canvas.height) {
+          const sliceCanvas = document.createElement("canvas");
+          sliceCanvas.width = canvas.width;
+          const currentSliceHeight = Math.min(pageCanvasHeight, canvas.height - renderedHeight);
+          sliceCanvas.height = currentSliceHeight;
+
+          const sliceCtx = sliceCanvas.getContext("2d");
+          if (sliceCtx) {
+            sliceCtx.fillStyle = "#ffffff";
+            sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+            sliceCtx.drawImage(
+              canvas,
+              0, renderedHeight, canvas.width, currentSliceHeight,
+              0, 0, canvas.width, currentSliceHeight
+            );
+
+            const sliceData = sliceCanvas.toDataURL("image/jpeg", 0.96);
+            const sliceImgHeight = (currentSliceHeight * pageWidth) / canvas.width;
+
+            if (pageIdx > 0) pdf.addPage();
+            pdf.addImage(sliceData, "JPEG", 0, 0, imgWidth, sliceImgHeight);
+          }
+
+          renderedHeight += currentSliceHeight;
+          pageIdx++;
+        }
       }
 
       const cleanName = memberName.replace(/[^a-zA-Z0-9]/g, '_');
-      pdf.save(`Dossie_Medico_Vita4Me_${cleanName}.pdf`);
+      pdf.save(`Dossie_Clinico_Vita4Me_${cleanName}.pdf`);
 
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 4000);
     } catch (err) {
       console.error("Erro ao gerar PDF:", err);
-      window.print();
+      // Fallback sem disparar print se o usuário clicou em Download
+      alert("Houve uma instabilidade momentânea ao renderizar o PDF. Recomendamos usar o botão 'Imprimir' para salvar diretamente como PDF.");
     } finally {
       setIsExporting(false);
     }
@@ -377,7 +449,7 @@ export const ExportDossierModal: React.FC<ExportDossierModalProps> = ({
                   <tbody className="divide-y divide-slate-200">
                     {memberIndicators.map(i => (
                       <tr key={i.id} className="hover:bg-slate-50">
-                        <td className="p-2 font-bold text-slate-950">{i.name}</td>
+                        <td className="p-2 font-bold text-slate-950">{formatBiomarkerName(i.name)}</td>
                         <td className="p-2 text-slate-500 font-mono text-[11px]">{formatDate(i.measured_at)}</td>
                         <td className="p-2 font-mono font-bold text-slate-900">
                           {i.value} <span className="text-[11px] font-normal text-slate-600">{i.unit}</span>

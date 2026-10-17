@@ -135,40 +135,63 @@
    ESTILOS DE IMPRESSÃO CLÍNICA OFICIAL (DOSSIÊ PDF)
    ======================================================== */
 @media print {
-  body {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm;
+  }
+
+  html, body {
     background: #ffffff !important;
     color: #0f172a !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
-  /* Ocultar toda a interface do app, modais, headers e backdrops */
-  body * {
-    visibility: hidden;
+  /* Ocultar toda a interface de tela, botões, modais e fundos escuros */
+  body > * {
+    display: none !important;
   }
 
-  /* Exibir exclusivamente o container do dossiê médico */
-  #healthai-printable-dossier,
-  #healthai-printable-dossier * {
-    visibility: visible;
+  /* Exceção: o container do modal que contém o dossiê */
+  body > div:has(#healthai-printable-dossier),
+  div:has(> #healthai-printable-dossier) {
+    display: block !important;
+    position: static !important;
+    overflow: visible !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Ocultar botões do modal ao imprimir */
+  button, nav, header {
+    display: none !important;
   }
 
   #healthai-printable-dossier {
-    position: absolute;
-    left: 0;
-    top: 0;
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 10mm 15mm !important;
+    padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
     background: #ffffff !important;
     color: #0f172a !important;
   }
 
+  #healthai-printable-dossier * {
+    visibility: visible !important;
+  }
+
   /* Evitar quebras desordenadas em tabelas e seções */
   .page-break-inside-avoid {
-    break-inside: avoid;
-    page-break-inside: avoid;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 }
 
