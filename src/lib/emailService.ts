@@ -329,3 +329,184 @@ export async function sendTestEmail(toEmail: string) {
     return { success: false, error: err.message };
   }
 }
+
+/**
+ * 5. Envio de Boas-Vindas ao Trial de 7 Dias com Cartão Cadastrado
+ */
+export async function sendTrialWelcomeEmail(params: {
+  email: string;
+  name: string;
+  planName: string;
+  trialEndsAt: string;
+  firstBillingDate: string;
+  amountBrl: number;
+  cardLastDigits?: string;
+}) {
+  const resend = getResendClient();
+  const title = `Seu teste de 7 dias no Vita4Me começou! 🚀`;
+
+  const content = `
+    <div class="badge">TESTE GRATUITO ATIVO</div>
+    <h1>Olá, ${params.name || "Paciente"}!</h1>
+    <p>Seja muito bem-vindo ao <strong>Vita4Me</strong>. Seu período de teste gratuito de 7 dias no plano <strong>${params.planName}</strong> já está liberado!</p>
+    
+    <div class="card">
+      <p style="margin: 0 0 8px; font-weight: 700; color: #7AC943;">Detalhes da sua assinatura:</p>
+      <ul style="margin: 0; padding-left: 20px; color: #CDEBC5; font-size: 14px;">
+        <li><strong>Plano:</strong> ${params.planName}</li>
+        <li><strong>Período de teste:</strong> 7 dias grátis (até ${params.trialEndsAt})</li>
+        <li><strong>Primeira cobrança:</strong> ${params.firstBillingDate}</li>
+        <li><strong>Valor após o teste:</strong> R$ ${params.amountBrl.toFixed(2).replace('.', ',')}</li>
+        <li><strong>Forma de pagamento:</strong> Cartão de Crédito final **** ${params.cardLastDigits || 'cadastrado'}</li>
+      </ul>
+    </div>
+
+    <p style="margin-top: 16px; font-size: 13px; color: #8FBF9F;">
+      💡 <strong>Transparência total:</strong> Nenhuma cobrança foi feita hoje. Enviaremos lembretes antes do fim do período de teste e você pode cancelar a qualquer momento nas configurações da sua conta sem qualquer custo.
+    </p>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <a href="${appUrl}/app" class="button">Acessar Meu Painel Vita4Me</a>
+    </div>
+  `;
+
+  const html = wrapEmailLayout(title, content);
+
+  if (!resend) {
+    console.log(`[SIMULAÇÃO EMAIL] Trial Welcome -> ${params.email} | Plano: ${params.planName}`);
+    return { success: true, simulated: true };
+  }
+
+  try {
+    const result = await resend.emails.send({
+      from: defaultFrom,
+      to: params.email,
+      subject: title,
+      html,
+    });
+    return { success: true, id: result.data?.id };
+  } catch (err: any) {
+    console.error("Erro ao enviar email de boas-vindas ao trial via Resend:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 6. Lembrete do Dia 5 (Faltam 2 dias para o fim do teste)
+ */
+export async function sendTrialReminderDay5Email(params: {
+  email: string;
+  name: string;
+  planName: string;
+  trialEndsAt: string;
+  firstBillingDate: string;
+  amountBrl: number;
+  cardLastDigits?: string;
+}) {
+  const resend = getResendClient();
+  const title = `Faltam 2 dias para o fim do seu teste no Vita4Me`;
+
+  const content = `
+    <div class="badge" style="background-color: #3b82f6; color: #ffffff;">LEMBRETE DE CONTA</div>
+    <h1>Olá, ${params.name || "Paciente"}!</h1>
+    <p>Esperamos que esteja aproveitando a gestão inteligente dos seus exames e prontuário médico no <strong>Vita4Me</strong>.</p>
+    
+    <p>Passando para avisar que faltam <strong>2 dias</strong> para o encerramento do seu teste gratuito de 7 dias (termina em <strong>${params.trialEndsAt}</strong>).</p>
+
+    <div class="card">
+      <p style="margin: 0 0 8px; font-weight: 700; color: #7AC943;">Resumo da Continuidade:</p>
+      <ul style="margin: 0; padding-left: 20px; color: #CDEBC5; font-size: 14px;">
+        <li><strong>Plano:</strong> ${params.planName}</li>
+        <li><strong>Primeira cobrança automática:</strong> ${params.firstBillingDate}</li>
+        <li><strong>Valor:</strong> R$ ${params.amountBrl.toFixed(2).replace('.', ',')}</li>
+        <li><strong>Cartão:</strong> Final **** ${params.cardLastDigits || 'cadastrado'}</li>
+      </ul>
+    </div>
+
+    <p style="margin-top: 16px; font-size: 13px; color: #8FBF9F;">
+      Se estiver gostando e quiser continuar, não precisa fazer nada — seu acesso seguirá ininterrupto. Caso prefira não continuar, basta cancelar com 1 clique nas configurações antes de ${params.firstBillingDate}.
+    </p>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <a href="${appUrl}/app?tab=settings" class="button">Gerenciar Minha Assinatura</a>
+    </div>
+  `;
+
+  const html = wrapEmailLayout(title, content);
+
+  if (!resend) {
+    console.log(`[SIMULAÇÃO EMAIL] Reminder Day 5 -> ${params.email}`);
+    return { success: true, simulated: true };
+  }
+
+  try {
+    const result = await resend.emails.send({
+      from: defaultFrom,
+      to: params.email,
+      subject: title,
+      html,
+    });
+    return { success: true, id: result.data?.id };
+  } catch (err: any) {
+    console.error("Erro ao enviar lembrete dia 5 via Resend:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 7. Lembrete do Dia 6 (Último dia de teste gratuito / Cobrança amanhã)
+ */
+export async function sendTrialReminderDay6Email(params: {
+  email: string;
+  name: string;
+  planName: string;
+  firstBillingDate: string;
+  amountBrl: number;
+  cardLastDigits?: string;
+}) {
+  const resend = getResendClient();
+  const title = `Amanhã encerra seu teste gratuito — Vita4Me`;
+
+  const content = `
+    <div class="badge" style="background-color: #f59e0b; color: #000000;">ÚLTIMO DIA DE TESTE</div>
+    <h1>Último dia de teste, ${params.name || "Paciente"}!</h1>
+    <p>Seu período de avaliação gratuita de 7 dias do <strong>Vita4Me</strong> encerra amanhã.</p>
+    
+    <div class="card">
+      <p style="margin: 0 0 8px; font-weight: 700; color: #7AC943;">Cobrança do 8º dia agendada:</p>
+      <ul style="margin: 0; padding-left: 20px; color: #CDEBC5; font-size: 14px;">
+        <li><strong>Data:</strong> Amanhã (${params.firstBillingDate})</li>
+        <li><strong>Valor:</strong> R$ ${params.amountBrl.toFixed(2).replace('.', ',')}</li>
+        <li><strong>Cartão:</strong> Final **** ${params.cardLastDigits || 'cadastrado'}</li>
+      </ul>
+    </div>
+
+    <p style="margin-top: 16px; font-size: 13px; color: #8FBF9F;">
+      Você continua com controle total: se não desejar a renovação automática, basta cancelar agora mesmo na aba de Configurações da sua conta.
+    </p>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <a href="${appUrl}/app?tab=settings" class="button">Ver Configurações da Conta</a>
+    </div>
+  `;
+
+  const html = wrapEmailLayout(title, content);
+
+  if (!resend) {
+    console.log(`[SIMULAÇÃO EMAIL] Reminder Day 6 -> ${params.email}`);
+    return { success: true, simulated: true };
+  }
+
+  try {
+    const result = await resend.emails.send({
+      from: defaultFrom,
+      to: params.email,
+      subject: title,
+      html,
+    });
+    return { success: true, id: result.data?.id };
+  } catch (err: any) {
+    console.error("Erro ao enviar lembrete dia 6 via Resend:", err);
+    return { success: false, error: err.message };
+  }
+}

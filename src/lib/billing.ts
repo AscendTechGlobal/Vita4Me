@@ -181,3 +181,47 @@ export async function cancelUnifiedSubscription(): Promise<boolean> {
 
   return Boolean(data?.success);
 }
+
+/**
+ * Inicia Assinatura Asaas com Teste Grátis de 7 Dias (Cartão de Crédito agendado para o 8º dia)
+ */
+export async function subscribeAsaasTrial(params: {
+  planId: "individual" | "family";
+  interval: "monthly" | "yearly";
+  creditCard: {
+    holderName: string;
+    number: string;
+    expiryMonth: string;
+    expiryYear: string;
+    ccv: string;
+  };
+  holderInfo: {
+    name: string;
+    email: string;
+    cpfCnpj: string;
+    phone?: string;
+    postalCode?: string;
+    addressNumber?: string;
+  };
+}): Promise<{
+  success: boolean;
+  subscriptionId: string;
+  trialEndsAt: string;
+  firstBillingDate: string;
+}> {
+  const { data, error } = await apiFetch<{
+    success: boolean;
+    subscriptionId: string;
+    trialEndsAt: string;
+    firstBillingDate: string;
+  }>("/api/billing/asaas/subscribe-trial", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+
+  if (error || !data) {
+    throw new Error(error || "Erro ao registrar cartão para o teste de 7 dias.");
+  }
+
+  return data;
+}

@@ -150,7 +150,8 @@ export interface AsaasWebhookEvent {
     | 'PAYMENT_CHECKOUT_VIEWED'
     | 'SUBSCRIPTION_CREATED'
     | 'SUBSCRIPTION_UPDATED'
-    | 'SUBSCRIPTION_DELETED';
+    | 'SUBSCRIPTION_DELETED'
+    | 'SUBSCRIPTION_INACTIVATED';
   payment?: AsaasPayment;
   subscription?: {
     id: string;

@@ -15,6 +15,7 @@ import {
   sendTestEmail,
 } from "./src/lib/emailService.js";
 import { billingService } from "./src/server/billing/billingService.js";
+import { processTrialReminders } from "./src/server/billing/trialReminderWorker.js";
 
 dotenv.config();
 
@@ -1932,6 +1933,77 @@ app.post(
 );
 
 // ==============================================================================
+// 7.3.1.1 ASSINATURA ASAAS COM 7 DIAS DE TRIAL (CARTÃO AGENDADO P/ 8º DIA)
+// ==============================================================================
+app.post(
+  "/api/billing/asaas/subscribe-trial",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Usuário não autenticado." });
+      }
+
+      const { planId, interval, creditCard, holderInfo } = req.body;
+
+      if (!creditCard || !holderInfo || !holderInfo.cpfCnpj) {
+        return res.status(400).json({
+          error: "Dados do cartão e CPF do titular são obrigatórios para ativação do teste de 7 dias.",
+        });
+      }
+
+      const result = await billingService.subscribeAsaasTrial({
+        userId,
+        userEmail: req.user?.email || holderInfo.email,
+        userName: holderInfo.name || "Paciente",
+        planId: planId || "individual",
+        interval: interval || "monthly",
+        creditCard,
+        holderInfo,
+      });
+
+      return res.status(200).json(result);
+    } catch (err: any) {
+      console.error("❌ Erro ao registrar assinatura trial Asaas:", err);
+      return res.status(400).json({
+        error: err.message || "Falha ao validar cartão e agendar assinatura no Asaas.",
+      });
+    }
+  }
+);
+
+// ==============================================================================
+// 7.3.1.2 WORKER CRON PARA LEMBRETES DE TRIAL (DIAS 5 E 6)
+// ==============================================================================
+app.post("/api/cron/trial-reminders", async (req: Request, res: Response) => {
+  try {
+    const cronSecret = process.env.CRON_SECRET;
+    const authHeader = req.headers.authorization;
+
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      return res.status(401).json({ error: "Acesso não autorizado ao job de lembretes." });
+    }
+
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: "Supabase Admin não disponível." });
+    }
+
+    const summary = await processTrialReminders(supabaseAdmin);
+    return res.status(200).json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      summary,
+    });
+  } catch (err: any) {
+    console.error("❌ Erro no cron de lembretes de trial:", err);
+    return res.status(500).json({
+      error: err.message || "Erro na execução do worker de lembretes de trial.",
+    });
+  }
+});
+
+// ==============================================================================
 // 7.3.2 ASAAS WEBHOOK ENDPOINT (PIX & CARTÃO NACIONAL)
 // ==============================================================================
 app.post("/api/webhooks/asaas", async (req: Request, res: Response) => {
@@ -2113,6 +2185,16 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`🌿 Vita4Me Hardened Server rodando com sucesso em http://0.0.0.0:${PORT} [Modo: ${IS_PROD ? "PRODUÇÃO" : "DESENVOLVIMENTO"}]`);
+
+    // Iniciar agendador de lembretes de trial (roda a cada 12 horas como contingência de background)
+    if (supabaseAdmin) {
+      console.log("⏰ Agendador de contingência de Lembretes de Trial ativado.");
+      setInterval(() => {
+        processTrialReminders(supabaseAdmin).catch((err) =>
+          console.error("❌ Erro no ciclo do agendador de lembretes de trial:", err)
+        );
+      }, 12 * 60 * 60 * 1000);
+    }
   });
 }
 

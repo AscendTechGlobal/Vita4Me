@@ -173,7 +173,7 @@ export class AsaasClient {
   }
 
   /**
-   * Cria Assinatura Recorrente via Cartão de Crédito Nacional
+   * Cria Assinatura Recorrente via Cartão de Crédito Nacional com suporte a Trial e Agendamento
    */
   public async createCreditCardSubscription(params: {
     customerId: string;
@@ -181,6 +181,7 @@ export class AsaasClient {
     cycle: "MONTHLY" | "YEARLY";
     description: string;
     externalReference: string;
+    nextDueDate?: string;
     creditCard: {
       holderName: string;
       number: string;
@@ -199,9 +200,13 @@ export class AsaasClient {
   }): Promise<{
     subscriptionId: string;
     status: string;
+    nextDueDate: string;
   }> {
-    const today = new Date();
-    const nextDueDate = today.toISOString().split("T")[0];
+    let nextDueDate = params.nextDueDate;
+    if (!nextDueDate) {
+      const today = new Date();
+      nextDueDate = today.toISOString().split("T")[0];
+    }
 
     const payload = {
       customer: params.customerId,
@@ -228,7 +233,7 @@ export class AsaasClient {
       },
     };
 
-    const res = await this.request<{ id: string; status: string }>(
+    const res = await this.request<{ id: string; status: string; nextDueDate?: string }>(
       "/subscriptions",
       {
         method: "POST",
@@ -239,6 +244,7 @@ export class AsaasClient {
     return {
       subscriptionId: res.id,
       status: res.status || "ACTIVE",
+      nextDueDate: res.nextDueDate || nextDueDate,
     };
   }
 

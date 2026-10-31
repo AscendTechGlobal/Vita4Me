@@ -13,6 +13,7 @@ import {
 import {
   sendWelcomeTrialEmail,
   sendSubscriptionConfirmedEmail,
+  sendTrialWelcomeEmail,
 } from "../../lib/emailService.js";
 
 export class BillingService {
@@ -244,6 +245,114 @@ export class BillingService {
   }
 
   /**
+   * Ativa Trial de 7 Dias com Cartão de Crédito Agendado no Asaas (1ª cobrança no 8º dia)
+   */
+  public async subscribeAsaasTrial(params: {
+    userId: string;
+    userEmail: string;
+    userName: string;
+    planId: "individual" | "family";
+    interval: "monthly" | "yearly";
+    creditCard: {
+      holderName: string;
+      number: string;
+      expiryMonth: string;
+      expiryYear: string;
+      ccv: string;
+    };
+    holderInfo: {
+      name: string;
+      email: string;
+      cpfCnpj: string;
+      phone?: string;
+      postalCode?: string;
+      addressNumber?: string;
+    };
+  }): Promise<{
+    success: boolean;
+    subscriptionId: string;
+    trialEndsAt: string;
+    firstBillingDate: string;
+  }> {
+    if (!this.supabase) {
+      throw new Error("Supabase não inicializado no servidor.");
+    }
+
+    const planConfig = BILLING_PLANS[params.planId] || BILLING_PLANS.individual;
+    const value =
+      params.interval === "yearly"
+        ? planConfig.yearlyMonthlyEquivalentBrl * 12
+        : planConfig.monthlyBrl;
+
+    // 1. Obter ou Criar Cliente no Asaas
+    const customer = await asaasClient.getOrCreateCustomer({
+      name: params.holderInfo.name || params.userName,
+      email: params.holderInfo.email || params.userEmail,
+      cpfCnpj: params.holderInfo.cpfCnpj,
+      phone: params.holderInfo.phone,
+      externalReference: `${params.userId}:${params.planId}`,
+    });
+
+    // 2. Calcular Datas (7 dias de teste completo, cobrança automática no 8º dia)
+    const now = new Date();
+    const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const firstBilling = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000);
+    const nextDueDateStr = firstBilling.toISOString().split("T")[0];
+
+    // 3. Criar Subscrição no Asaas com cobrança agendada para nextDueDate
+    const sub = await asaasClient.createCreditCardSubscription({
+      customerId: customer.id,
+      value,
+      cycle: params.interval === "yearly" ? "YEARLY" : "MONTHLY",
+      description: `Vita4Me ${planConfig.name} - Teste Grátis 7 Dias`,
+      externalReference: `${params.userId}:${params.planId}`,
+      nextDueDate: nextDueDateStr,
+      creditCard: params.creditCard,
+      creditCardHolderInfo: params.holderInfo,
+    });
+
+    const lastDigits = params.creditCard.number.replace(/\D/g, "").slice(-4);
+
+    // 4. Atualizar Supabase (Profiles)
+    await this.supabase
+      .from("profiles")
+      .update({
+        subscription_status: "trialing",
+        plan_tier: params.planId,
+        billing_provider: "asaas",
+        billing_customer_id: customer.id,
+        billing_subscription_id: sub.subscriptionId,
+        asaas_customer_id: customer.id,
+        asaas_subscription_id: sub.subscriptionId,
+        trial_started_at: now.toISOString(),
+        trial_ends_at: trialEnd.toISOString(),
+        card_last_digits: lastDigits,
+        reminder_5_sent: false,
+        reminder_6_sent: false,
+        updated_at: now.toISOString(),
+      })
+      .eq("id", params.userId);
+
+    // 5. Enviar E-mail Transacional de Boas-Vindas ao Trial
+    sendTrialWelcomeEmail({
+      email: params.userEmail,
+      name: params.userName,
+      planName: planConfig.name,
+      trialEndsAt: trialEnd.toLocaleDateString("pt-BR"),
+      firstBillingDate: firstBilling.toLocaleDateString("pt-BR"),
+      amountBrl: value,
+      cardLastDigits: lastDigits,
+    }).catch((err) => console.error("⚠️ [Resend] Erro ao enviar boas-vindas do trial:", err));
+
+    return {
+      success: true,
+      subscriptionId: sub.subscriptionId,
+      trialEndsAt: trialEnd.toISOString(),
+      firstBillingDate: nextDueDateStr,
+    };
+  }
+
+  /**
    * Criação de Checkout no Stripe (Exterior / Global)
    */
   private async createStripeCheckout(
@@ -441,7 +550,26 @@ export class BillingService {
     try {
       const payment = event.payment;
       const externalRef = payment?.externalReference || event.subscription?.externalReference;
-      const [userId, planId] = (externalRef || "").split(":");
+      let [userId, planId] = (externalRef || "").split(":");
+
+      // Resiliência: se userId não estiver no externalReference, buscar no banco pelo customer ou subscription
+      if (!userId && this.supabase) {
+        const customerId = payment?.customer;
+        const subId = payment?.subscription || event.subscription?.id;
+        if (customerId || subId) {
+          const { data: matchedProfile } = await this.supabase
+            .from("profiles")
+            .select("id, plan_tier")
+            .or(`billing_customer_id.eq.${customerId},asaas_customer_id.eq.${customerId},billing_subscription_id.eq.${subId},asaas_subscription_id.eq.${subId}`)
+            .limit(1)
+            .maybeSingle();
+
+          if (matchedProfile) {
+            userId = matchedProfile.id;
+            planId = matchedProfile.plan_tier;
+          }
+        }
+      }
 
       switch (event.event) {
         case "PAYMENT_CONFIRMED":
@@ -458,6 +586,8 @@ export class BillingService {
                 billing_provider: "asaas",
                 billing_customer_id: payment?.customer,
                 billing_subscription_id: payment?.subscription || null,
+                asaas_customer_id: payment?.customer,
+                asaas_subscription_id: payment?.subscription || null,
                 ai_credits: resolvedPlan === "family" ? 9999 : 500,
                 updated_at: new Date().toISOString(),
               })
@@ -508,7 +638,8 @@ export class BillingService {
         }
 
         case "PAYMENT_REFUNDED":
-        case "SUBSCRIPTION_DELETED": {
+        case "SUBSCRIPTION_DELETED":
+        case "SUBSCRIPTION_INACTIVATED": {
           if (userId && this.supabase) {
             console.log(`❌ [Asaas] Assinatura cancelada/reembolsada para usuário ${userId}`);
             await this.supabase

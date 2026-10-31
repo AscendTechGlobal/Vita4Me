@@ -32,6 +32,12 @@ export interface UserProfile {
   billing_provider?: 'asaas' | 'stripe' | 'free' | null;
   billing_customer_id?: string | null;
   billing_subscription_id?: string | null;
+  asaas_customer_id?: string | null;
+  asaas_subscription_id?: string | null;
+  card_last_digits?: string | null;
+  card_brand?: string | null;
+  reminder_5_sent?: boolean;
+  reminder_6_sent?: boolean;
   ai_credits?: number;
   onboarding_completed?: boolean;
   created_at: string;
