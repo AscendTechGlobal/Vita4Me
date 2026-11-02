@@ -5,6 +5,7 @@ import {
   createUnifiedCheckout,
   checkPixStatus,
   openStripeCustomerPortal,
+  subscribeAsaasTrial,
 } from "../lib/billing";
 import { PricingPlan } from "../types";
 import { useAuth } from "../contexts/AuthContext";
@@ -61,6 +62,25 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
   const [cpf, setCpf] = useState("");
   const [cpfError, setCpfError] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Estado do Checkout Cartão de Crédito (Trial 7 Dias Asaas)
+  const [cardModalPlan, setCardModalPlan] = useState<{
+    planId: "individual" | "family";
+    planName: string;
+    amountFormatted: string;
+    interval: "monthly" | "yearly";
+  } | null>(null);
+  const [cardHolderName, setCardHolderName] = useState(profile?.full_name || "");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCcv, setCardCcv] = useState("");
+  const [cardPhone, setCardPhone] = useState(profile?.phone || "");
+  const [cardPostalCode, setCardPostalCode] = useState("");
+  const [isSubmittingCard, setIsSubmittingCard] = useState(false);
+  const [cardTrialSuccess, setCardTrialSuccess] = useState<{
+    firstBillingDate: string;
+    planName: string;
+  } | null>(null);
 
   const formatCpf = (val: string) => {
     const nums = val.replace(/\D/g, "").slice(0, 11);
@@ -179,6 +199,17 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
         }
         setCpfError(null);
 
+        if (method === "credit_card") {
+          setCardTrialSuccess(null);
+          setCardModalPlan({
+            planId: targetPlanId,
+            planName: plan.name,
+            amountFormatted: `R$ ${price.toFixed(2).replace(".", ",")}`,
+            interval,
+          });
+          return;
+        }
+
         const checkoutRes = await createUnifiedCheckout({
           planId: targetPlanId,
           interval,
@@ -232,11 +263,80 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
     setTimeout(() => setCopiedPix(false), 3000);
   };
 
+  const handleSubmitCardTrial = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cardModalPlan) return;
+
+    const cleanCardNum = cardNumber.replace(/\D/g, "");
+    if (cleanCardNum.length < 13 || cleanCardNum.length > 19) {
+      alert("Informe um número de cartão válido.");
+      return;
+    }
+
+    const expParts = cardExpiry.split("/");
+    const expiryMonth = (expParts[0] || "").trim().padStart(2, "0");
+    let expiryYear = (expParts[1] || "").trim();
+    if (expiryYear.length === 2) expiryYear = `20${expiryYear}`;
+
+    if (!expiryMonth || !expiryYear || expiryYear.length !== 4) {
+      alert("Informe a validade do cartão no formato MM/AA ou MM/AAAA.");
+      return;
+    }
+
+    if (cardCcv.trim().length < 3) {
+      alert("Informe o código de segurança (CVV) do cartão.");
+      return;
+    }
+
+    setIsSubmittingCard(true);
+    try {
+      const res = await subscribeAsaasTrial({
+        planId: cardModalPlan.planId,
+        interval: cardModalPlan.interval,
+        creditCard: {
+          holderName: cardHolderName.trim() || profile?.full_name || "Titular",
+          number: cleanCardNum,
+          expiryMonth,
+          expiryYear,
+          ccv: cardCcv.trim(),
+        },
+        holderInfo: {
+          name: cardHolderName.trim() || profile?.full_name || "Titular",
+          email: profile?.email || "",
+          cpfCnpj: cpf.replace(/\D/g, ""),
+          phone: cardPhone.replace(/\D/g, "") || "11999999999",
+          postalCode: cardPostalCode.replace(/\D/g, "") || "01310100",
+          addressNumber: "1",
+        },
+      });
+
+      if (res.success) {
+        confetti({
+          particleCount: 120,
+          spread: 80,
+          origin: { y: 0.6 },
+        });
+        setCardTrialSuccess({
+          firstBillingDate: new Date(res.firstBillingDate + "T12:00:00").toLocaleDateString("pt-BR"),
+          planName: cardModalPlan.planName,
+        });
+        if (reloadProfile) {
+          await reloadProfile();
+        }
+      }
+    } catch (err: any) {
+      console.error("Erro ao iniciar trial com cartão:", err);
+      alert(err.message || "Falha ao validar cartão no Asaas. Verifique os dados informados.");
+    } finally {
+      setIsSubmittingCard(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
       onClick={(e) => {
-        if (e.target === e.currentTarget && !pixModalData) onClose();
+        if (e.target === e.currentTarget && !pixModalData && !cardModalPlan) onClose();
       }}
     >
       <div className="relative w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-6 md:p-10 animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col my-auto">
@@ -246,6 +346,9 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
             onClick={() => {
               if (pixModalData) {
                 setPixModalData(null);
+              } else if (cardModalPlan) {
+                setCardModalPlan(null);
+                setCardTrialSuccess(null);
               } else {
                 onClose();
               }
@@ -253,7 +356,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 transition text-xs font-bold cursor-pointer shadow-xs"
           >
             <ArrowLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>{pixModalData ? "Voltar aos Planos" : "Voltar ao Prontuário"}</span>
+            <span>{pixModalData || cardModalPlan ? "Voltar aos Planos" : "Voltar ao Prontuário"}</span>
           </button>
 
           <button
@@ -266,8 +369,163 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose }) =
           </button>
         </div>
 
-        {/* TELA 1: MODAL DE PAGAMENTO PIX ATIVO */}
-        {pixModalData ? (
+        {/* TELA 0: MODAL DE TRIAL 7 DIAS COM CARTÃO (ASAAS) */}
+        {cardModalPlan ? (
+          <div className="overflow-y-auto custom-scrollbar flex-1 pr-1 flex flex-col items-center justify-center py-2 max-w-md mx-auto w-full">
+            {cardTrialSuccess ? (
+              <div className="space-y-4 text-center animate-in fade-in duration-300 py-6">
+                <div className="w-16 h-16 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/30">
+                  <CheckCircle2 className="w-10 h-10" />
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+                  Teste de 7 Dias Ativado!
+                </h3>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Seu plano <strong className="text-emerald-600">{cardTrialSuccess.planName}</strong> está liberado. Nenhuma cobrança foi feita hoje — o primeiro débito está agendado apenas para <strong>{cardTrialSuccess.firstBillingDate}</strong>.
+                </p>
+                <button
+                  onClick={() => {
+                    setCardModalPlan(null);
+                    setCardTrialSuccess(null);
+                    onClose();
+                  }}
+                  className="mt-4 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition cursor-pointer"
+                >
+                  Ir para Meu Prontuário
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmitCardTrial} className="w-full space-y-4">
+                <div className="text-center space-y-1">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full text-xs font-bold border border-emerald-500/20">
+                    <CreditCard className="w-3.5 h-3.5" /> 7 Dias Grátis • Cobrança no 8º Dia
+                  </span>
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                    Plano Vita4Me {cardModalPlan.planName}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Hoje: <strong className="text-emerald-600">R$ 0,00</strong> • Após 7 dias: <strong>{cardModalPlan.amountFormatted}</strong>/{cardModalPlan.interval === "yearly" ? "ano" : "mês"}
+                  </p>
+                </div>
+
+                <div className="space-y-3 bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs">
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Nome impresso no cartão
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={cardHolderName}
+                      onChange={(e) => setCardHolderName(e.target.value)}
+                      placeholder="Ex: JOAO M SILVA"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Número do Cartão
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={19}
+                      value={cardNumber}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, "").slice(0, 16);
+                        const formatted = digits.replace(/(\d{4})(?=\d)/g, "$1 ");
+                        setCardNumber(formatted);
+                      }}
+                      placeholder="0000 0000 0000 0000"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Validade (MM/AA)
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={7}
+                        value={cardExpiry}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+                          if (digits.length <= 2) setCardExpiry(digits);
+                          else setCardExpiry(`${digits.slice(0, 2)}/${digits.slice(2)}`);
+                        }}
+                        placeholder="MM/AA"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        CVV
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={4}
+                        value={cardCcv}
+                        onChange={(e) => setCardCcv(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                        placeholder="123"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Celular / WhatsApp
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={cardPhone}
+                        onChange={(e) => setCardPhone(e.target.value)}
+                        placeholder="(11) 99999-9999"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        CEP
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={9}
+                        value={cardPostalCode}
+                        onChange={(e) => setCardPostalCode(e.target.value)}
+                        placeholder="01310-100"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingCard}
+                  className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
+                >
+                  {isSubmittingCard ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>Iniciar 7 Dias Grátis (R$ 0,00 hoje)</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+        ) : pixModalData ? (
           <div className="overflow-y-auto custom-scrollbar flex-1 pr-1 flex flex-col items-center justify-center py-4 text-center max-w-lg mx-auto">
             {isPixPaid ? (
               <div className="space-y-4 animate-in fade-in duration-300">
