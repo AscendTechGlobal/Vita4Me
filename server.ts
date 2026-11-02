@@ -744,6 +744,70 @@ app.get(["/api/ready", "/ready"], async (req, res) => {
 });
 
 // ==============================================================================
+// 8.0 CADASTRO DIRETO COM AUTO-CONFIRMAÇÃO & BOAS-VINDAS (ZERO ATRITO SMTP)
+// ==============================================================================
+app.post("/api/auth/register", async (req: Request, res: Response) => {
+  try {
+    const { email, password, fullName } = req.body || {};
+    const cleanEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const cleanName = typeof fullName === "string" ? fullName.trim() : "Paciente Vita4Me";
+
+    if (!cleanEmail || !password || typeof password !== "string" || password.length < 8) {
+      return res.status(400).json({
+        error: "Informe um e-mail válido e uma senha com no mínimo 8 caracteres.",
+      });
+    }
+
+    if (!supabaseAdmin || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(503).json({
+        error: "Serviço administrativo de cadastro não disponível.",
+        fallbackClientSignUp: true,
+      });
+    }
+
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email: cleanEmail,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: cleanName,
+      },
+    });
+
+    if (error) {
+      const msg = error.message?.toLowerCase() || "";
+      if (msg.includes("already") || msg.includes("exists") || msg.includes("registered")) {
+        return res.status(409).json({
+          error: "Este e-mail já possui cadastro ativo no Vita4Me. Faça login com sua senha ou clique em 'Esqueci minha senha'.",
+          code: "USER_ALREADY_EXISTS",
+        });
+      }
+      return res.status(400).json({
+        error: error.message || "Não foi possível criar a conta.",
+      });
+    }
+
+    // Disparar e-mail de Boas-Vindas via Resend sem bloquear a resposta
+    sendWelcomeTrialEmail({
+      to: cleanEmail,
+      name: cleanName,
+      planName: "Individual",
+    }).catch((err) => console.warn("⚠️ [Resend] Aviso ao enviar boas-vindas no cadastro:", err));
+
+    return res.status(200).json({
+      success: true,
+      userId: data.user?.id,
+      autoConfirmed: true,
+    });
+  } catch (err: any) {
+    console.error("❌ Erro em /api/auth/register:", err);
+    return res.status(500).json({
+      error: "Erro interno ao processar seu cadastro.",
+    });
+  }
+});
+
+// ==============================================================================
 // COFRE LOCAL DE DOCUMENTOS MÉDICOS (GAVETA DE EXAMES VITA4ME)
 // ==============================================================================
 const LOCAL_VAULT_DIR = path.join(process.cwd(), "data", "medical-documents");

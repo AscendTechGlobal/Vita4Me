@@ -140,10 +140,10 @@ export const AuthPageView: React.FC<AuthPageViewProps> = ({ initialTab = "login"
           setErrorMsg(error);
         } else {
           trackEvent("signup_completed", { source: "email_password" });
-          setSuccessMsg("Conta criada com sucesso! Verifique seu e-mail para confirmar seu cadastro antes de acessar.");
+          setSuccessMsg("Conta criada com sucesso! Redirecionando para o seu prontuário...");
           setTimeout(() => {
-            navigate("/login");
-          }, 3000);
+            navigate("/app", { replace: true });
+          }, 1000);
         }
       } else if (tab === "reset") {
         if (!email.trim()) {

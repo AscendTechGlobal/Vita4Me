@@ -140,15 +140,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isSupabaseConfigured) {
       return { error: "Serviço de autenticação não configurado no ambiente." };
     }
+
+    const cleanEmail = email.trim();
+    const cleanName = fullName?.trim() || "";
+
+    // 1. Tentar cadastro administrativo direto via backend (auto-confirma e autentica na hora)
+    try {
+      const regRes = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password,
+          fullName: cleanName,
+        }),
+      });
+      const regData = await regRes.json().catch(() => ({}));
+
+      if (regRes.ok && regData.success) {
+        // Autenticar imediatamente a sessão recém-criada
+        await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        });
+        return { error: null };
+      }
+
+      if (regRes.status === 409 || regData.code === "USER_ALREADY_EXISTS") {
+        return {
+          error: regData.error || "Este e-mail já está cadastrado. Faça login ou solicite recuperação de senha.",
+        };
+      }
+
+      if (regRes.status === 400 && regData.error) {
+        return { error: regData.error };
+      }
+    } catch (e) {
+      console.warn("Fallback para signUp direto do cliente:", e);
+    }
+
+    // 2. Fallback caso o endpoint administrativo não esteja acessível
     const confirmUrl = `${window.location.origin}/auth/confirm`;
-    const { error } = await supabase.auth.signUp({
-      email: email.trim(),
+    const { data, error } = await supabase.auth.signUp({
+      email: cleanEmail,
       password,
       options: {
-        data: { full_name: fullName?.trim() || '' },
+        data: { full_name: cleanName },
         emailRedirectTo: confirmUrl,
       },
     });
+
+    // Detectar conta duplicada ofuscada pelo Supabase (identities vazio)
+    if (!error && data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      return {
+        error: "Este e-mail já está cadastrado. Faça login com sua senha ou solicite recuperação de senha.",
+      };
+    }
+
     if (error) {
       let message = "Não foi possível criar sua conta. Tente novamente em alguns instantes.";
       if (error.message?.includes("User already registered") || error.message?.includes("already exists")) {
