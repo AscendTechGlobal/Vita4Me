@@ -16,6 +16,7 @@ import {
   saveFamilyMember,
   deleteFamilyMember,
   syncAllFromSupabase,
+  ensureStorageUserScope,
 } from "../lib/healthStorage";
 import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from "../types";
 import { trackEvent, trackPageView } from "../lib/analytics";
@@ -72,6 +73,7 @@ export const AppLayout: React.FC = () => {
   };
 
   useEffect(() => {
+    ensureStorageUserScope(user?.id || null);
     refreshAllData();
 
     // Hidratação assíncrona do Supabase ao autenticar

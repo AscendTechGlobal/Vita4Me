@@ -2,6 +2,7 @@ import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, Daily
 import { supabase, isSupabaseConfigured } from './supabase';
 
 const KEYS = {
+  CURRENT_USER: 'vita4me_current_user_id_v2',
   EXAMS: 'vita4me_exams_v2',
   INDICATORS: 'vita4me_indicators_v2',
   MEDICATIONS: 'vita4me_medications_v2',
@@ -10,6 +11,46 @@ const KEYS = {
   HABIT: 'vita4me_habit_today_v2',
   ACTIVE_MEMBER: 'vita4me_active_member_id_v2',
 };
+
+export function clearAllHealthStorage(): void {
+  try {
+    Object.values(KEYS).forEach((key) => localStorage.removeItem(key));
+  } catch (err) {
+    console.error('Erro ao limpar cache local de saúde:', err);
+  }
+}
+
+export function ensureStorageUserScope(userId: string | null): void {
+  try {
+    if (!userId) {
+      clearAllHealthStorage();
+      return;
+    }
+    const storedUserId = localStorage.getItem(KEYS.CURRENT_USER);
+    if (storedUserId !== userId) {
+      clearAllHealthStorage();
+      localStorage.setItem(KEYS.CURRENT_USER, userId);
+    }
+  } catch (err) {
+    console.error('Erro ao validar escopo de usuário no storage:', err);
+  }
+}
+
+function filterByCurrentUser<T extends { user_id?: string }>(items: T[]): T[] {
+  try {
+    const currentUserId = localStorage.getItem(KEYS.CURRENT_USER);
+    if (!currentUserId) return [];
+    return items.filter(
+      (item) =>
+        !item.user_id ||
+        item.user_id === 'usr-current' ||
+        item.user_id === 'usr-default' ||
+        item.user_id === currentUserId
+    );
+  } catch {
+    return [];
+  }
+}
 
 function getStored<T>(key: string, fallback: T): T {
   try {
@@ -31,7 +72,7 @@ function setStored<T>(key: string, value: T): void {
 
 // 1. EXAMES (Retorna array vazio se não houver exames cadastrados)
 export function getExams(): LabExam[] {
-  return getStored<LabExam[]>(KEYS.EXAMS, []);
+  return filterByCurrentUser(getStored<LabExam[]>(KEYS.EXAMS, []));
 }
 
 export function saveExam(exam: LabExam): LabExam {
@@ -101,7 +142,7 @@ export function deleteExam(id: string): void {
 
 // 2. INDICADORES (Retorna array vazio se não houver indicadores)
 export function getIndicators(): HealthIndicator[] {
-  return getStored<HealthIndicator[]>(KEYS.INDICATORS, []);
+  return filterByCurrentUser(getStored<HealthIndicator[]>(KEYS.INDICATORS, []));
 }
 
 export function saveIndicator(indicator: HealthIndicator): HealthIndicator {
@@ -166,7 +207,7 @@ export function deleteIndicator(id: string): void {
 
 // 3. MEDICAMENTOS (Retorna array vazio por padrão)
 export function getMedications(): Medication[] {
-  return getStored<Medication[]>(KEYS.MEDICATIONS, []);
+  return filterByCurrentUser(getStored<Medication[]>(KEYS.MEDICATIONS, []));
 }
 
 export function saveMedication(med: Medication): Medication {
@@ -232,7 +273,7 @@ export function deleteMedication(id: string): void {
 
 // 4. HISTÓRICO CLÍNICO / TIMELINE (Retorna array vazio por padrão)
 export function getHealthRecords(): HealthRecord[] {
-  return getStored<HealthRecord[]>(KEYS.RECORDS, []);
+  return filterByCurrentUser(getStored<HealthRecord[]>(KEYS.RECORDS, []));
 }
 
 export function saveHealthRecord(record: HealthRecord): HealthRecord {
@@ -296,7 +337,7 @@ export function deleteHealthRecord(id: string): void {
 
 // 5. PERFIS FAMILIARES (Retorna array vazio por padrão)
 export function getFamilyMembers(): FamilyMember[] {
-  return getStored<FamilyMember[]>(KEYS.FAMILY, []);
+  return filterByCurrentUser(getStored<FamilyMember[]>(KEYS.FAMILY, []));
 }
 
 export function saveFamilyMember(member: FamilyMember): FamilyMember {
@@ -364,8 +405,9 @@ export function setActiveFamilyMemberId(id: string): void {
 // 6. ROTINA DIÁRIA (Valores zerados por padrão)
 export function getTodayHabit(): DailyHabit {
   const todayStr = new Date().toISOString().split('T')[0];
+  const currentUserId = localStorage.getItem(KEYS.CURRENT_USER) || 'usr-current';
   const emptyHabit: DailyHabit = {
-    user_id: 'usr-current',
+    user_id: currentUserId,
     log_date: todayStr,
     water_ml: 0,
     sleep_hours: 0,
@@ -373,7 +415,13 @@ export function getTodayHabit(): DailyHabit {
     mood: 'Neutro',
   };
   const habit = getStored<DailyHabit>(KEYS.HABIT, emptyHabit);
-  if (habit.log_date !== todayStr) {
+  if (
+    habit.log_date !== todayStr ||
+    (habit.user_id &&
+      habit.user_id !== 'usr-current' &&
+      habit.user_id !== 'usr-default' &&
+      habit.user_id !== currentUserId)
+  ) {
     setStored(KEYS.HABIT, emptyHabit);
     return emptyHabit;
   }
@@ -409,7 +457,12 @@ export async function syncAllFromSupabase(): Promise<boolean> {
   if (!isSupabaseConfigured) return false;
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
+    if (!user) {
+      clearAllHealthStorage();
+      return false;
+    }
+
+    ensureStorageUserScope(user.id);
 
     // 1. Membros Familiares
     const { data: famData, error: famErr } = await supabase
@@ -420,43 +473,65 @@ export async function syncAllFromSupabase(): Promise<boolean> {
       setStored(KEYS.FAMILY, famData);
     }
 
-    // 2. Exames Laboratoriais
+    // 2. Exames Laboratoriais (sobrescreve sempre, inclusive quando 0 registros)
     const { data: examData, error: examErr } = await supabase
       .from('lab_exams')
       .select('*')
       .eq('user_id', user.id)
       .order('exam_date', { ascending: false });
-    if (!examErr && examData && examData.length > 0) {
+    if (!examErr && examData) {
       setStored(KEYS.EXAMS, examData);
     }
 
-    // 3. Indicadores de Saúde
+    // 3. Indicadores de Saúde (sobrescreve sempre, inclusive quando 0 registros)
     const { data: indData, error: indErr } = await supabase
       .from('health_indicators')
       .select('*')
       .eq('user_id', user.id)
       .order('measured_at', { ascending: false });
-    if (!indErr && indData && indData.length > 0) {
+    if (!indErr && indData) {
       setStored(KEYS.INDICATORS, indData);
     }
 
-    // 4. Medicamentos
+    // 4. Medicamentos (sobrescreve sempre, inclusive quando 0 registros)
     const { data: medData, error: medErr } = await supabase
       .from('medications')
       .select('*')
       .eq('user_id', user.id);
-    if (!medErr && medData && medData.length > 0) {
+    if (!medErr && medData) {
       setStored(KEYS.MEDICATIONS, medData);
     }
 
-    // 5. Linha do Tempo / Prontuário
+    // 5. Linha do Tempo / Prontuário (sobrescreve sempre, inclusive quando 0 registros)
     const { data: recData, error: recErr } = await supabase
       .from('health_records')
       .select('*')
       .eq('user_id', user.id)
       .order('event_date', { ascending: false });
-    if (!recErr && recData && recData.length > 0) {
+    if (!recErr && recData) {
       setStored(KEYS.RECORDS, recData);
+    }
+
+    // 6. Rotina Diária de Hoje (isola por user_id)
+    const todayStr = new Date().toISOString().split('T')[0];
+    const { data: habitData, error: habitErr } = await supabase
+      .from('daily_habits')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('log_date', todayStr)
+      .maybeSingle();
+    if (!habitErr) {
+      setStored(
+        KEYS.HABIT,
+        habitData || {
+          user_id: user.id,
+          log_date: todayStr,
+          water_ml: 0,
+          sleep_hours: 0,
+          exercise_minutes: 0,
+          mood: 'Neutro',
+        }
+      );
     }
 
     return true;

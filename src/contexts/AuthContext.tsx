@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { clearAllHealthStorage, ensureStorageUserScope } from '../lib/healthStorage';
 import { UserProfile } from '../types';
 
 interface AuthContextType {
@@ -83,9 +84,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
+          ensureStorageUserScope(session.user.id);
           setUser(session.user);
           await fetchProfile(session.user.id);
         } else {
+          clearAllHealthStorage();
           setUser(null);
           setProfile(null);
         }
@@ -105,9 +108,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (session?.user) {
+        ensureStorageUserScope(session.user.id);
         setUser(session.user);
         await fetchProfile(session.user.id);
       } else {
+        clearAllHealthStorage();
         setUser(null);
         setProfile(null);
       }
@@ -269,6 +274,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (typeof window !== "undefined") {
       try {
+        clearAllHealthStorage();
         sessionStorage.clear();
       } catch (e) {
         // Silencioso
