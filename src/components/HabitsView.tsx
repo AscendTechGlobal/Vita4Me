@@ -32,27 +32,41 @@ export const HabitsView: React.FC<HabitsViewProps> = ({
   const [exerciseMinutes, setExerciseMinutes] = useState(todayHabit.exercise_minutes);
   const [mood, setMood] = useState<DailyHabit["mood"]>(todayHabit.mood || "Excelente");
   const [notes, setNotes] = useState(todayHabit.notes || "");
+  const [isSaving, setIsSaving] = useState(false);
 
   const waterGoal = 2500;
   const waterPercent = Math.min(Math.round((waterMl / waterGoal) * 100), 100);
 
-  const handleAddWater = (amount: number) => {
+  const handleAddWater = async (amount: number) => {
+    const previous = waterMl;
     const updated = Math.max(0, waterMl + amount);
     setWaterMl(updated);
-    saveDailyHabit({ water_ml: updated });
-    onRefreshHabit();
+    try {
+      await saveDailyHabit({ water_ml: updated });
+      onRefreshHabit();
+    } catch (err: any) {
+      setWaterMl(previous);
+      alert(err?.message || "Não foi possível salvar a hidratação no servidor.");
+    }
   };
 
-  const handleSaveAll = () => {
-    saveDailyHabit({
-      water_ml: waterMl,
-      sleep_hours: sleepHours,
-      exercise_minutes: exerciseMinutes,
-      mood,
-      notes,
-    });
-    onRefreshHabit();
-    alert(hDict.saveSuccess);
+  const handleSaveAll = async () => {
+    setIsSaving(true);
+    try {
+      await saveDailyHabit({
+        water_ml: waterMl,
+        sleep_hours: sleepHours,
+        exercise_minutes: exerciseMinutes,
+        mood,
+        notes,
+      });
+      onRefreshHabit();
+      alert(hDict.saveSuccess);
+    } catch (err: any) {
+      alert(err?.message || "Não foi possível salvar a rotina diária no servidor.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -80,10 +94,11 @@ export const HabitsView: React.FC<HabitsViewProps> = ({
 
         <button
           onClick={handleSaveAll}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs transition flex items-center gap-2 cursor-pointer self-start md:self-auto"
+          disabled={isSaving}
+          className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs transition flex items-center gap-2 cursor-pointer self-start md:self-auto"
         >
           <CheckCircle2 className="w-4 h-4" />
-          <span>{hDict.saveTodayBtn}</span>
+          <span>{isSaving ? dictionary.common.saving : hDict.saveTodayBtn}</span>
         </button>
       </div>
 

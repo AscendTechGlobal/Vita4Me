@@ -83,7 +83,8 @@ export interface LabExam {
     status: 'normal' | 'altered' | 'attention';
     simpleExplanation: string;
   }>;
-  status: 'pending' | 'processed' | 'error';
+  ai_questions_for_doctor?: string[];
+  status: 'pending' | 'processed' | 'error' | 'normal' | 'warning';
   created_at: string;
 }
 
@@ -99,6 +100,7 @@ export interface HealthIndicator {
   reference_max?: number;
   measured_at: string;
   status: 'low' | 'normal' | 'borderline' | 'high' | 'critical';
+  notes?: string;
   created_at: string;
 }
 

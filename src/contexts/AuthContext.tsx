@@ -2,7 +2,15 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { clearAllHealthStorage, ensureStorageUserScope } from '../lib/healthStorage';
+import { validatePasswordPolicy } from '../lib/passwordPolicy';
 import { UserProfile } from '../types';
+
+export interface SignupConsentPayload {
+  termsAccepted: boolean;
+  privacyAccepted: boolean;
+  healthDataAccepted: boolean;
+  documentVersion?: string;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -12,7 +20,7 @@ interface AuthContextType {
   isPasswordRecovery: boolean;
   setIsPasswordRecovery: (value: boolean) => void;
   signInWithEmail: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUpWithEmail: (email: string, password: string, fullName?: string) => Promise<{ error: string | null }>;
+  signUpWithEmail: (email: string, password: string, fullName?: string, consents?: SignupConsentPayload) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<{ error: string | null }>;
@@ -141,7 +149,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error: null };
   };
 
-  const signUpWithEmail = async (email: string, password: string, fullName?: string) => {
+  const signUpWithEmail = async (
+    email: string,
+    password: string,
+    fullName?: string,
+    consents?: SignupConsentPayload
+  ) => {
     if (!isSupabaseConfigured) {
       return { error: "Serviço de autenticação não configurado no ambiente." };
     }
@@ -149,7 +162,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanEmail = email.trim();
     const cleanName = fullName?.trim() || "";
 
-    // 1. Tentar cadastro administrativo direto via backend (auto-confirma e autentica na hora)
+    const pwdCheck = validatePasswordPolicy(password);
+    if (!pwdCheck.isValid) {
+      return { error: pwdCheck.error };
+    }
+
+    if (
+      !consents ||
+      consents.termsAccepted !== true ||
+      consents.privacyAccepted !== true ||
+      consents.healthDataAccepted !== true
+    ) {
+      return {
+        error: "É obrigatório aceitar os Termos de Uso, a Política de Privacidade e o Consentimento para Tratamento de Dados de Saúde.",
+      };
+    }
+
+    // Cadastro validado server-side (valida senha, consentimentos obrigatórios e cria registro de auditoria)
     try {
       const regRes = await fetch("/api/auth/register", {
         method: "POST",
@@ -158,6 +187,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: cleanEmail,
           password,
           fullName: cleanName,
+          consents: {
+            termsAccepted: consents.termsAccepted,
+            privacyAccepted: consents.privacyAccepted,
+            healthDataAccepted: consents.healthDataAccepted,
+            documentVersion: consents.documentVersion || "2.0",
+          },
         }),
       });
       const regData = await regRes.json().catch(() => ({}));
@@ -177,25 +212,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      if (regRes.status === 400 && regData.error) {
+      if ((regRes.status === 400 || regRes.status === 422) && regData.error) {
         return { error: regData.error };
       }
     } catch (e) {
       console.warn("Fallback para signUp direto do cliente:", e);
     }
 
-    // 2. Fallback caso o endpoint administrativo não esteja acessível
+    // Fallback caso o endpoint administrativo não esteja acessível
     const confirmUrl = `${window.location.origin}/auth/confirm`;
+    const acceptedAt = new Date().toISOString();
     const { data, error } = await supabase.auth.signUp({
       email: cleanEmail,
       password,
       options: {
-        data: { full_name: cleanName },
+        data: {
+          full_name: cleanName,
+          consents_accepted_v2: true,
+          consents: {
+            termsAccepted: true,
+            privacyAccepted: true,
+            healthDataAccepted: true,
+            documentVersion: consents.documentVersion || "2.0",
+            acceptedAt,
+            source: "web_signup_fallback",
+          },
+        },
         emailRedirectTo: confirmUrl,
       },
     });
 
-    // Detectar conta duplicada ofuscada pelo Supabase (identities vazio)
     if (!error && data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
       return {
         error: "Este e-mail já está cadastrado. Faça login com sua senha ou solicite recuperação de senha.",
@@ -222,19 +268,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isSupabaseConfigured) {
       return { error: "Serviço de autenticação não configurado." };
     }
-    const redirectUrl = `${window.location.origin}/#reset-password`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: redirectUrl,
-    });
-    if (error) {
-      return { error: "Não foi possível enviar o link de recuperação. Verifique o e-mail informado." };
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return { error: "Por favor, informe um endereço de e-mail válido." };
     }
+    const redirectUrl = `${window.location.origin}/#reset-password`;
+    // Não revelar se o e-mail existe ou não (prevenção de enumeração de contas)
+    await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: redirectUrl,
+    }).catch(() => {});
     return { error: null };
   };
 
   const updateUserPassword = async (password: string) => {
     if (!isSupabaseConfigured) {
       return { error: "Serviço de autenticação não configurado." };
+    }
+    const pwdCheck = validatePasswordPolicy(password);
+    if (!pwdCheck.isValid) {
+      return { error: pwdCheck.error };
     }
     const { error } = await supabase.auth.updateUser({ password });
     if (error) {

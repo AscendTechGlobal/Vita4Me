@@ -3,10 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="apple-touch-icon" href="/logo-icon-transparent.png" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="theme-color" content="#0A3B2E" />
+    <meta name="msapplication-TileColor" content="#061F18" />
+    <meta name="msapplication-TileImage" content="/icon-144.png" />
+    <meta name="application-name" content="Vita4Me" />
+    <meta name="apple-mobile-web-app-title" content="Vita4Me" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Vita4Me | Organize seus exames e acompanhe sua saúde</title>
     <meta name="description" content="Organize exames laboratoriais, acompanhe indicadores vitais, controle medicamentos e entenda laudos médicos com o apoio da inteligência artificial do Vita4Me." />
     <meta name="keywords" content="prontuario digital, organizar exames, historico de saude, exames laboratoriais, tradutor de laudos, biomarcadores, dossie de saude, vita4me" />
@@ -94,10 +102,10 @@
             },
             {
               "@type": "Question",
-              "name": "Os dados de saúde estão protegidos pela LGPD?",
+              "name": "Como os dados de saúde são protegidos no Vita4Me?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Sim. Todos os dados são criptografados em repouso e em trânsito com padrões de segurança hospitalar, controle de acesso estrito e total conformidade com a LGPD."
+                "text": "Os dados clínicos são protegidos em trânsito via TLS, armazenados em infraestrutura com criptografia em repouso e isolados por usuário através de políticas Row-Level Security (RLS) no banco de dados, seguindo os princípios de proteção de dados da LGPD."
               }
             }
           ]

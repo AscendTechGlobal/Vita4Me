@@ -125,7 +125,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     },
     {
       q: "Meus dados de saúde estão seguros?",
-      a: "Absolutamente. Seus dados são protegidos com criptografia de ponta a ponta (AES-256), em total alinhamento com a LGPD e privacidade médica. Nenhum dado é compartilhado ou vendido a terceiros."
+      a: "Seus dados clínicos são protegidos em trânsito com criptografia TLS, armazenados em infraestrutura com proteção em repouso e isolados por titular via políticas Row-Level Security (RLS), estruturados segundo os princípios da LGPD. Nenhum dado é compartilhado ou vendido a terceiros."
     },
     {
       q: "Como funciona o Dossiê Médico para Consultas?",

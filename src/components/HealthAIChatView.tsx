@@ -258,7 +258,7 @@ export const HealthAIChatView: React.FC<HealthAIChatViewProps> = ({
             </span>
           </div>
           <span className="text-[10px] text-amber-600/80 dark:text-amber-400/80 font-mono hidden md:inline shrink-0">
-            CFM &bull; LGPD &bull; HIPAA
+            TLS &bull; RLS &bull; LGPD
           </span>
         </div>
       </div>
@@ -422,7 +422,7 @@ export const HealthAIChatView: React.FC<HealthAIChatViewProps> = ({
         <div className="flex items-center justify-between px-2 text-[10px] text-slate-400 dark:text-[#727272]">
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-[#1DB954]" />
-            <span>Privacidade e criptografia médica ponta a ponta</span>
+            <span>Dados protegidos em trânsito (TLS) e isolados por usuário (RLS)</span>
           </span>
           <span className="hidden sm:inline font-mono">Pressione Enter ↵ para enviar</span>
         </div>

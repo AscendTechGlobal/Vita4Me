@@ -13,7 +13,19 @@ import {
   Scale
 } from "lucide-react";
 
-export type LegalTab = "privacidade" | "termos" | "cookies";
+export type LegalTab = "privacidade" | "termos" | "cookies" | "consentimento";
+
+const CONTROLLER_LEGAL_NAME =
+  (typeof import.meta !== "undefined" &&
+    (import.meta as any).env?.VITE_CONTROLLER_LEGAL_NAME &&
+    String((import.meta as any).env.VITE_CONTROLLER_LEGAL_NAME).trim()) ||
+  "Vita4Me Tecnologia e Serviços Digitais (Configurável via VITE_CONTROLLER_LEGAL_NAME)";
+
+const DPO_CONTACT_EMAIL =
+  (typeof import.meta !== "undefined" &&
+    (import.meta as any).env?.VITE_DPO_EMAIL &&
+    String((import.meta as any).env.VITE_DPO_EMAIL).trim()) ||
+  "privacidade@vita4me.app";
 
 interface LegalDocumentsModalProps {
   isOpen: boolean;
@@ -29,7 +41,7 @@ export const LegalDocumentsModal: React.FC<LegalDocumentsModalProps> = ({
   const [activeTab, setActiveTab] = useState<LegalTab>(initialTab);
 
   useEffect(() => {
-    setActiveTab(initialTab);
+    setActiveTab(initialTab === "consentimento" ? "privacidade" : initialTab);
   }, [initialTab, isOpen]);
 
   // Close on Escape key
@@ -140,7 +152,7 @@ export const LegalDocumentsModal: React.FC<LegalDocumentsModalProps> = ({
               <section className="space-y-2">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">1. Identificação do Controlador</h3>
                 <p>
-                  O controlador responsável pelas decisões referentes ao tratamento dos dados pessoais no Vita4Me é a empresa mantenedora da plataforma [Razão Social / Nome do Controlador — pendência de deploy], com contato de privacidade e encarregado de dados (DPO) através do canal oficial: <code className="text-emerald-600 dark:text-emerald-400">privacidade@vita4me.app</code>.
+                  O controlador responsável pelas decisões referentes ao tratamento dos dados pessoais no Vita4Me é <strong>{CONTROLLER_LEGAL_NAME}</strong>, com contato de privacidade e encarregado de proteção de dados (DPO) através do canal oficial: <code className="text-emerald-600 dark:text-emerald-400">{DPO_CONTACT_EMAIL}</code>.
                 </p>
               </section>
 

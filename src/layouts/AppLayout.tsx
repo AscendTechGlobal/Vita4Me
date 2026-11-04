@@ -20,7 +20,8 @@ import {
 } from "../lib/healthStorage";
 import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from "../types";
 import { trackEvent, trackPageView } from "../lib/analytics";
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { supabase, isSupabaseConfigured, getAuthHeaders } from "../lib/supabase";
+import { LegalDocumentsModal, LegalTab } from "../components/LegalDocumentsModal";
 
 // Lazy-loaded Modals
 const BillingModal = lazy(() => import("../components/BillingModal").then(m => ({ default: m.BillingModal })));
@@ -35,7 +36,7 @@ const LoadingSpinner = () => (
 );
 
 export const AppLayout: React.FC = () => {
-  const { user, profile, isLoading: authLoading, refreshProfile } = useAuth();
+  const { user, profile, isLoading: authLoading, refreshProfile, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -46,6 +47,12 @@ export const AppLayout: React.FC = () => {
   const [isExportDossierOpen, setIsExportDossierOpen] = useState(false);
   const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false);
   const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
+  const [showConsentGate, setShowConsentGate] = useState(false);
+  const [consentTerms, setConsentTerms] = useState(false);
+  const [consentHealth, setConsentHealth] = useState(false);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
+  const [legalTab, setLegalTab] = useState<LegalTab | null>(null);
 
   // Data state
   const [exams, setExams] = useState<LabExam[]>([]);
@@ -96,12 +103,57 @@ export const AppLayout: React.FC = () => {
     }
   }, [user]);
 
-  // Transição reativa e disparo de Anamnese Inicial quando profile for comprovadamente onboarding_completed = false
+  // Transição reativa e verificação de consentimento OAuth (A03) + Anamnese Inicial
   useEffect(() => {
-    if (authLoading) return;
-    if (user && profile && profile.onboarding_completed === false) {
-      setIsOnboardingModalOpen(true);
-    }
+    if (authLoading || !user) return;
+
+    const checkConsentsAndOnboarding = async () => {
+      const hasConsentMetadata = Boolean(user.user_metadata?.consents_accepted_v2);
+      const pendingRaw = sessionStorage.getItem("vita4me_pending_oauth_consents");
+
+      if (pendingRaw) {
+        try {
+          const parsed = JSON.parse(pendingRaw);
+          if (parsed?.termsAccepted && parsed?.healthDataAccepted) {
+            const headers = await getAuthHeaders();
+            const res = await fetch("/api/auth/consents", {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                termsAccepted: true,
+                privacyAccepted: true,
+                healthDataAccepted: true,
+                documentVersion: parsed.documentVersion || "2.0",
+                source: "oauth_signup",
+              }),
+            });
+            if (res.ok) {
+              sessionStorage.removeItem("vita4me_pending_oauth_consents");
+              setShowConsentGate(false);
+              if (profile && profile.onboarding_completed === false) {
+                setIsOnboardingModalOpen(true);
+              }
+              return;
+            }
+          }
+        } catch {}
+      }
+
+      const isOAuthUser =
+        user.app_metadata?.provider === "google" ||
+        (Array.isArray(user.app_metadata?.providers) && user.app_metadata.providers.includes("google"));
+
+      if (isOAuthUser && !hasConsentMetadata && profile && profile.onboarding_completed === false) {
+        setShowConsentGate(true);
+        return;
+      }
+
+      if (profile && profile.onboarding_completed === false) {
+        setIsOnboardingModalOpen(true);
+      }
+    };
+
+    checkConsentsAndOnboarding();
   }, [user, profile, authLoading]);
 
   // Titular estruturado garantido como primeiro membro do prontuário
@@ -230,16 +282,20 @@ export const AppLayout: React.FC = () => {
             members={allMembers}
             activeMemberId={activeMemberId}
             onSelectMember={handleSelectFamilyMember}
-            onAddMember={(newM) => {
-              saveFamilyMember(newM);
+            onAddMember={async (newM) => {
+              await saveFamilyMember(newM);
               refreshAllData();
             }}
-            onDeleteMember={(id) => {
-              deleteFamilyMember(id);
-              if (activeMemberId === id) {
-                handleSelectFamilyMember("fam-me");
+            onDeleteMember={async (id) => {
+              try {
+                await deleteFamilyMember(id);
+                if (activeMemberId === id) {
+                  handleSelectFamilyMember("fam-me");
+                }
+                refreshAllData();
+              } catch (err: any) {
+                alert(err?.message || "Não foi possível remover o perfil familiar no servidor.");
               }
-              refreshAllData();
             }}
           />
         )}
@@ -400,7 +456,6 @@ export const AppLayout: React.FC = () => {
                         title: `Alergia: ${al.trim()}`,
                         description: "Declarada na anamnese médica inicial.",
                         event_date: new Date().toISOString().split("T")[0],
-                        tags: ["Alergia", "Anamnese"],
                       });
                     if (recError) {
                       console.error("[ONBOARDING][health_records.insert]", {
@@ -416,10 +471,141 @@ export const AppLayout: React.FC = () => {
 
               // ── E) REFRESH e FECHAMENTO ──
               await refreshProfile();
+              await syncAllFromSupabase();
               refreshAllData();
               setIsOnboardingModalOpen(false);
               return { success: true };
             }}
+          />
+        )}
+
+        {showConsentGate && (
+          <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-4">
+              <div className="space-y-1">
+                <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                  Consentimento Obrigatório (LGPD)
+                </h2>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Para prosseguir com a criação do seu prontuário digital via conta Google, confirme abaixo a leitura e aceite dos documentos legais e o consentimento para tratamento de dados pessoais sensíveis de saúde.
+                </p>
+              </div>
+
+              {consentError && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-700 dark:text-rose-300">
+                  {consentError}
+                </div>
+              )}
+
+              <div className="space-y-3 text-xs">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={consentTerms}
+                    onChange={(e) => setConsentTerms(e.target.checked)}
+                    className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                    Li e concordo com os{" "}
+                    <button
+                      type="button"
+                      onClick={() => setLegalTab("termos")}
+                      className="text-emerald-600 dark:text-emerald-400 underline font-semibold"
+                    >
+                      Termos de Uso
+                    </button>{" "}
+                    e a{" "}
+                    <button
+                      type="button"
+                      onClick={() => setLegalTab("privacidade")}
+                      className="text-emerald-600 dark:text-emerald-400 underline font-semibold"
+                    >
+                      Política de Privacidade
+                    </button>{" "}
+                    (Versão 2.0).
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={consentHealth}
+                    onChange={(e) => setConsentHealth(e.target.checked)}
+                    className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                    Autorizo de forma livre, informada e destacada o tratamento dos meus{" "}
+                    <button
+                      type="button"
+                      onClick={() => setLegalTab("consentimento")}
+                      className="text-emerald-600 dark:text-emerald-400 underline font-semibold"
+                    >
+                      dados pessoais sensíveis de saúde
+                    </button>{" "}
+                    (Art. 11 da LGPD) para organização do prontuário e auxílio informativo por IA.
+                  </span>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await signOut();
+                    navigate("/login", { replace: true });
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                >
+                  Recusar e Sair
+                </button>
+                <button
+                  type="button"
+                  disabled={consentSaving || !consentTerms || !consentHealth}
+                  onClick={async () => {
+                    setConsentError(null);
+                    setConsentSaving(true);
+                    try {
+                      const headers = await getAuthHeaders();
+                      const res = await fetch("/api/auth/consents", {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify({
+                          termsAccepted: consentTerms,
+                          privacyAccepted: consentTerms,
+                          healthDataAccepted: consentHealth,
+                          documentVersion: "2.0",
+                          source: "oauth_consent_gate",
+                        }),
+                      });
+                      const data = await res.json().catch(() => ({}));
+                      if (!res.ok || !data.success) {
+                        throw new Error(data.error || "Não foi possível registrar seu consentimento no servidor.");
+                      }
+                      await supabase.auth.refreshSession().catch(() => {});
+                      setShowConsentGate(false);
+                      if (profile && profile.onboarding_completed === false) {
+                        setIsOnboardingModalOpen(true);
+                      }
+                    } catch (err: any) {
+                      setConsentError(err?.message || "Erro ao registrar consentimentos.");
+                    } finally {
+                      setConsentSaving(false);
+                    }
+                  }}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer transition"
+                >
+                  {consentSaving ? "Registrando..." : "Confirmar e Continuar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {legalTab && (
+          <LegalDocumentsModal
+            isOpen={!!legalTab}
+            onClose={() => setLegalTab(null)}
+            initialTab={legalTab}
           />
         )}
       </Suspense>

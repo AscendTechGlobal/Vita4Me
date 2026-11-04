@@ -30,6 +30,8 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
   const { dictionary } = useLanguage();
   const mDict = dictionary.medications;
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Form State
   const [name, setName] = useState("");
@@ -40,9 +42,15 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
   const [prescribedBy, setPrescribedBy] = useState("");
   const [isContinuous, setIsContinuous] = useState(true);
 
-  const handleAddSubmit = (e: React.FormEvent) => {
+  const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !dosage.trim()) return;
+    if (!name.trim() || !dosage.trim()) {
+      setFormError("O nome e a dosagem do medicamento são obrigatórios.");
+      return;
+    }
+
+    setFormError(null);
+    setIsSaving(true);
 
     const newMed: Medication = {
       id: "med-" + Date.now(),
@@ -59,21 +67,31 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
       created_at: new Date().toISOString(),
     };
 
-    saveMedication(newMed);
-    trackEvent('medication_created');
-    onRefreshMedications();
-    setShowAddModal(false);
+    try {
+      await saveMedication(newMed);
+      trackEvent('medication_created');
+      onRefreshMedications();
+      setShowAddModal(false);
 
-    // Reset
-    setName("");
-    setDosage("");
-    setInstructions("");
-    setPrescribedBy("");
+      // Reset
+      setName("");
+      setDosage("");
+      setInstructions("");
+      setPrescribedBy("");
+    } catch (err: any) {
+      setFormError(err?.message || "Não foi possível salvar o medicamento no servidor.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleToggleActive = (med: Medication) => {
-    saveMedication({ ...med, is_active: !med.is_active });
-    onRefreshMedications();
+  const handleToggleActive = async (med: Medication) => {
+    try {
+      await saveMedication({ ...med, is_active: !med.is_active });
+      onRefreshMedications();
+    } catch (err: any) {
+      alert(err?.message || "Não foi possível atualizar o status do medicamento no servidor.");
+    }
   };
 
   return (
@@ -162,10 +180,14 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
               </button>
 
               <button
-                onClick={() => {
-                  if (window.confirm("Confirm?")) {
-                    deleteMedication(med.id);
-                    onRefreshMedications();
+                onClick={async () => {
+                  if (window.confirm("Deseja remover este medicamento?")) {
+                    try {
+                      await deleteMedication(med.id);
+                      onRefreshMedications();
+                    } catch (err: any) {
+                      alert(err?.message || "Não foi possível excluir o medicamento no servidor.");
+                    }
                   }
                 }}
                 className="p-1.5 text-slate-400 hover:text-rose-500 transition"
@@ -216,6 +238,11 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
             </div>
 
             <form onSubmit={handleAddSubmit} className="space-y-3 text-xs">
+              {formError && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-700 dark:text-rose-300 font-medium">
+                  {formError}
+                </div>
+              )}
               <div>
                 <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{mDict.nameLabel} *</label>
                 <input
@@ -307,9 +334,10 @@ export const MedicationsView: React.FC<MedicationsViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
+                  disabled={isSaving}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs rounded-xl shadow-xs"
                 >
-                  {mDict.saveBtn}
+                  {isSaving ? dictionary.common.saving : mDict.saveBtn}
                 </button>
               </div>
             </form>

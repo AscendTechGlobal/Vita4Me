@@ -33,6 +33,8 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
   const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
   const [selectedMarker, setSelectedMarker] = useState<string>("Glicemia");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Form state
   const [name, setName] = useState("Glicemia");
@@ -74,8 +76,11 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
   // REGRA CLÍNICA FUNDAMENTAL: O valor em destaque SEMPRE é o mais recente cronologicamente
   const latestVal = markerData.length > 0 ? markerData[markerData.length - 1] : null;
 
-  const handleAddSubmit = (e: React.FormEvent) => {
+  const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+    setIsSaving(true);
+
     const opt = markerOptions.find(o => o.name === name);
 
     let status: HealthIndicator["status"] = "normal";
@@ -99,10 +104,16 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
       created_at: new Date().toISOString(),
     };
 
-    saveIndicator(newInd);
-    trackEvent('health_indicator_created', { category: newInd.category });
-    onRefreshIndicators();
-    setShowAddModal(false);
+    try {
+      await saveIndicator(newInd);
+      trackEvent('health_indicator_created', { category: newInd.category });
+      onRefreshIndicators();
+      setShowAddModal(false);
+    } catch (err: any) {
+      setFormError(err?.message || "Não foi possível salvar a medição no servidor.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -257,6 +268,11 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
             <h2 className="text-base font-bold text-slate-900 dark:text-white">{iDict.modalTitle}</h2>
 
             <form onSubmit={handleAddSubmit} className="space-y-3">
+              {formError && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-700 dark:text-rose-300 font-medium">
+                  {formError}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">{iDict.markerLabel}</label>
                 <select
@@ -301,9 +317,10 @@ export const IndicatorsView: React.FC<IndicatorsViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
+                  disabled={isSaving}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs rounded-xl shadow-xs"
                 >
-                  {iDict.saveBtn}
+                  {isSaving ? dictionary.common.saving : iDict.saveBtn}
                 </button>
               </div>
             </form>

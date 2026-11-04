@@ -254,7 +254,11 @@ grant all on public.stripe_webhook_events to service_role;
 -- 2.3 LGPD COMPLIANCE: EXCLUSÃO TOTAL DE CONTA, DADOS & STORAGE (Art. 18 LGPD)
 -- ==============================================================================
 create or replace function public.delete_user_account()
-returns void as $$
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
 declare
   v_user_id uuid;
 begin
@@ -268,13 +272,49 @@ begin
   where bucket_id = 'medical-documents'
     and (storage.foldername(name))[1] = v_user_id::text;
 
-  -- 2. Exclui o registro na tabela auth.users, disparando cascade em todas as tabelas clínicas públicas
+  -- 2. Exclui os registros clínicos explicitamente e o registro em auth.users
+  delete from public.daily_habits where user_id = v_user_id;
+  delete from public.health_records where user_id = v_user_id;
+  delete from public.medications where user_id = v_user_id;
+  delete from public.health_indicators where user_id = v_user_id;
+  delete from public.lab_exams where user_id = v_user_id;
+  delete from public.family_members where user_id = v_user_id;
+  delete from public.user_consents where user_id = v_user_id;
+  delete from public.profiles where id = v_user_id;
   delete from auth.users where id = v_user_id;
+
+  return jsonb_build_object('deleted', true, 'user_id', v_user_id, 'deleted_at', now());
 end;
-$$ language plpgsql security definer set search_path = '';
+$$;
 
 revoke all on function public.delete_user_account() from public, anon;
 grant execute on function public.delete_user_account() to authenticated;
+
+-- ==============================================================================
+-- 2.4 TABELA DE CONSENTIMENTOS AUDITÁVEIS (Art. 8 e 11 LGPD)
+-- ==============================================================================
+create table if not exists public.user_consents (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  consent_type text not null check (consent_type in ('terms_of_use', 'privacy_policy', 'health_data_processing')),
+  document_version text not null default '2.0',
+  accepted boolean not null default true check (accepted = true),
+  accepted_at timestamptz not null default now(),
+  source text not null default 'web_signup',
+  ip_hash text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.user_consents enable row level security;
+
+create policy "Users can view own consents"
+  on public.user_consents for select to authenticated
+  using ((select auth.uid()) = user_id);
+
+create policy "Users can insert own consents"
+  on public.user_consents for insert to authenticated
+  with check ((select auth.uid()) = user_id and accepted = true);
 
 -- ==============================================================================
 -- 3. TABELA: FAMILY_MEMBERS (Gestão de Dependentes / Família)
@@ -304,8 +344,8 @@ alter table public.family_members enable row level security;
 
 create policy "Family members isolation"
   on public.family_members for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
 
 -- ==============================================================================
 -- 4. TABELA: LAB_EXAMS (Central de Exames & Laudos com IA)
@@ -324,7 +364,9 @@ create table if not exists public.lab_exams (
   ai_summary text,
   ai_simple_translation text,
   ai_key_findings jsonb default '[]'::jsonb,
-  status text not null default 'processed' check (status in ('pending', 'processed', 'error')),
+  ai_questions_for_doctor text[] default '{}',
+  status_alert text default 'Normal',
+  status text not null default 'normal' check (status in ('normal', 'warning', 'error')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -333,8 +375,17 @@ alter table public.lab_exams enable row level security;
 
 create policy "Lab exams isolation"
   on public.lab_exams for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check (
+    (select auth.uid()) = user_id
+    and (
+      family_member_id is null
+      or exists (
+        select 1 from public.family_members fm
+        where fm.id = family_member_id and fm.user_id = (select auth.uid())
+      )
+    )
+  );
 
 -- ==============================================================================
 -- 5. TABELA: HEALTH_INDICATORS (Marcadores & Tendências Clínicas)
@@ -343,14 +394,14 @@ create table if not exists public.health_indicators (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users(id) on delete cascade not null,
   family_member_id uuid references public.family_members(id) on delete set null,
-  name text not null, -- 'Glicemia', 'Colesterol Total', 'HDL', 'LDL', 'Triglicerídeos', 'Vitamina D', 'Ferritina', 'TSH', 'Pressão Sistólica', 'Pressão Diastólica', 'Peso'
-  category text not null default 'Metabólico', -- 'Metabólico', 'Lipídico', 'Vitaminas', 'Hormonal', 'Vital'
+  name text not null,
+  category text not null default 'Metabólico',
   value numeric not null,
-  unit text not null, -- 'mg/dL', 'ng/mL', 'mcg/dL', 'mIU/L', 'mmHg', 'kg'
+  unit text not null,
   reference_min numeric,
   reference_max numeric,
   measured_at timestamptz not null default now(),
-  status text not null default 'normal' check (status in ('normal', 'alerta', 'critico')),
+  status text not null default 'normal' check (status in ('low', 'normal', 'borderline', 'high', 'critical', 'alerta')),
   created_at timestamptz not null default now()
 );
 
@@ -358,8 +409,17 @@ alter table public.health_indicators enable row level security;
 
 create policy "Health indicators isolation"
   on public.health_indicators for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check (
+    (select auth.uid()) = user_id
+    and (
+      family_member_id is null
+      or exists (
+        select 1 from public.family_members fm
+        where fm.id = family_member_id and fm.user_id = (select auth.uid())
+      )
+    )
+  );
 
 -- ==============================================================================
 -- 6. TABELA: MEDICATIONS (Medicamentos & Lembretes de Posologia)
@@ -370,8 +430,8 @@ create table if not exists public.medications (
   family_member_id uuid references public.family_members(id) on delete set null,
   name text not null,
   dosage text not null,
-  frequency text not null, -- '1x ao dia', '2x ao dia (12/12h)', '3x ao dia (8/8h)', 'Conforme necessidade'
-  schedule_times text[] default '{}', -- ['08:00', '20:00']
+  frequency text not null,
+  schedule_times text[] default '{}',
   instructions text,
   prescribed_by text,
   start_date date default current_date,
@@ -386,8 +446,17 @@ alter table public.medications enable row level security;
 
 create policy "Medications isolation"
   on public.medications for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check (
+    (select auth.uid()) = user_id
+    and (
+      family_member_id is null
+      or exists (
+        select 1 from public.family_members fm
+        where fm.id = family_member_id and fm.user_id = (select auth.uid())
+      )
+    )
+  );
 
 -- ==============================================================================
 -- 7. TABELA: HEALTH_RECORDS (Timeline: Consultas, Vacinas, Cirurgias, Alergias)
@@ -399,6 +468,9 @@ create table if not exists public.health_records (
   record_type text not null check (record_type in ('consulta', 'vacina', 'cirurgia', 'internacao', 'alergia', 'procedimento')),
   title text not null,
   description text,
+  doctor_name text,
+  specialty text,
+  facility_name text,
   doctor_or_institution text,
   event_date date not null default current_date,
   tags text[] default '{}',
@@ -411,8 +483,17 @@ alter table public.health_records enable row level security;
 
 create policy "Health records isolation"
   on public.health_records for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check (
+    (select auth.uid()) = user_id
+    and (
+      family_member_id is null
+      or exists (
+        select 1 from public.family_members fm
+        where fm.id = family_member_id and fm.user_id = (select auth.uid())
+      )
+    )
+  );
 
 -- ==============================================================================
 -- 8. TABELA: DAILY_HABITS (Rotina de Bem-Estar: Água, Sono, Exercício, Humor)
@@ -420,11 +501,12 @@ create policy "Health records isolation"
 create table if not exists public.daily_habits (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users(id) on delete cascade not null,
+  family_member_id uuid references public.family_members(id) on delete set null,
   log_date date not null default current_date,
   water_ml integer not null default 0,
   sleep_hours numeric not null default 0,
   exercise_minutes integer not null default 0,
-  mood text, -- 'Excelente', 'Bom', 'Neutro', 'Cansado', 'Estressado'
+  mood text,
   notes text,
   created_at timestamptz not null default now(),
   unique(user_id, log_date)
@@ -434,8 +516,17 @@ alter table public.daily_habits enable row level security;
 
 create policy "Daily habits isolation"
   on public.daily_habits for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check (
+    (select auth.uid()) = user_id
+    and (
+      family_member_id is null
+      or exists (
+        select 1 from public.family_members fm
+        where fm.id = family_member_id and fm.user_id = (select auth.uid())
+      )
+    )
+  );
 
 -- ==============================================================================
 -- ÍNDICES DE ALTA PERFORMANCE

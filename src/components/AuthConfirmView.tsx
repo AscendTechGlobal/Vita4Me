@@ -347,7 +347,7 @@ export const AuthConfirmView: React.FC<AuthConfirmViewProps> = ({ onGoToLogin })
         <div className="pt-2 text-center">
           <span className="text-[10px] text-[#CDEBC5]/50 flex items-center justify-center gap-1">
             <Lock className="w-3 h-3 text-[#7AC943]/70" />
-            <span>Vita4Me • Ambiente Seguro com Criptografia de Ponta a Ponta</span>
+            <span>Vita4Me • Proteção em Trânsito (TLS) e Isolamento por Usuário (RLS)</span>
           </span>
         </div>
       </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { trackEvent, trackPageView } from "../lib/analytics";
+import { validatePasswordPolicy, NEUTRAL_PASSWORD_RESET_MESSAGE } from "../lib/passwordPolicy";
 import { LegalDocumentsModal, LegalTab } from "./LegalDocumentsModal";
 import {
   Eye,
@@ -44,6 +45,26 @@ export const AuthPageView: React.FC<AuthPageViewProps> = ({ initialTab = "login"
   const handleGoogleSignIn = async () => {
     setErrorMsg(null);
     setSuccessMsg(null);
+
+    if (tab === "signup") {
+      if (!termsAccepted || !healthConsentAccepted) {
+        setErrorMsg("Para criar sua conta com o Google, aceite primeiro os Termos de Uso, Política de Privacidade e o Consentimento de Dados de Saúde abaixo.");
+        return;
+      }
+      try {
+        sessionStorage.setItem(
+          "vita4me_pending_oauth_consents",
+          JSON.stringify({
+            termsAccepted: true,
+            privacyAccepted: true,
+            healthDataAccepted: true,
+            documentVersion: "2.0",
+            acceptedAt: new Date().toISOString(),
+          })
+        );
+      } catch {}
+    }
+
     setIsGoogleLoading(true);
     try {
       trackEvent("oauth_initiated", { provider: "google" });
@@ -73,23 +94,18 @@ export const AuthPageView: React.FC<AuthPageViewProps> = ({ initialTab = "login"
     }
   }, [user, authLoading, navigate]);
 
-  // Real-time password criteria validation
+  // Real-time password criteria validation via política única centralizada (A08)
   const passwordCriteria = useMemo(() => {
-    const hasMinLength = password.length >= 8;
-    const hasUpperCase = /[A-Z]/.test(password);
-    const hasLowerCase = /[a-z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
-    const hasSpecialChar = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(password);
-    const isStrong = hasMinLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar;
+    const policy = validatePasswordPolicy(password);
     const passwordsMatch = password.length > 0 && password === confirmPassword;
 
     return {
-      hasMinLength,
-      hasUpperCase,
-      hasLowerCase,
-      hasNumber,
-      hasSpecialChar,
-      isStrong,
+      hasMinLength: policy.checks.minLength,
+      hasUpperCase: policy.checks.hasUpperCase,
+      hasLowerCase: policy.checks.hasLowerCase,
+      hasNumber: policy.checks.hasNumber,
+      hasSpecialChar: policy.checks.hasSpecialChar,
+      isStrong: policy.isValid,
       passwordsMatch,
     };
   }, [password, confirmPassword]);
@@ -135,7 +151,12 @@ export const AuthPageView: React.FC<AuthPageViewProps> = ({ initialTab = "login"
           return;
         }
 
-        const { error } = await signUpWithEmail(email, password, fullName);
+        const { error } = await signUpWithEmail(email, password, fullName, {
+          termsAccepted,
+          privacyAccepted: termsAccepted,
+          healthDataAccepted: healthConsentAccepted,
+          documentVersion: "2.0",
+        });
         if (error) {
           setErrorMsg(error);
         } else {
@@ -154,7 +175,7 @@ export const AuthPageView: React.FC<AuthPageViewProps> = ({ initialTab = "login"
         if (error) {
           setErrorMsg(error);
         } else {
-          setSuccessMsg("Link de redefinição de senha enviado para o seu e-mail!");
+          setSuccessMsg(NEUTRAL_PASSWORD_RESET_MESSAGE);
         }
       }
     } finally {

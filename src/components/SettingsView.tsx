@@ -31,7 +31,9 @@ import {
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
-import { supabase } from "../lib/supabase";
+import { supabase, getAuthHeaders } from "../lib/supabase";
+import { clearAllHealthStorage } from "../lib/healthStorage";
+import { validatePasswordPolicy } from "../lib/passwordPolicy";
 import { openStripeCustomerPortal } from "../lib/stripe";
 import { cancelUnifiedSubscription } from "../lib/billing";
 import { LegalDocumentsModal, LegalTab } from "./LegalDocumentsModal";
@@ -327,13 +329,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
     setIsDeletingAccount(true);
     try {
-      if (isConfigured) {
-        await supabase.rpc('delete_user_account');
+      if (!isConfigured) {
+        alert('Serviço de autenticação não configurado no ambiente.');
+        return;
       }
+
+      const { data, error } = await supabase.rpc('delete_user_account');
+
+      if (error) {
+        if (error.code === 'PGRST202') {
+          const headers = await getAuthHeaders();
+          const apiRes = await fetch('/api/auth/account', {
+            method: 'DELETE',
+            headers,
+          });
+          const apiData = await apiRes.json().catch(() => ({}));
+          if (!apiRes.ok || !apiData.deleted) {
+            alert('Não foi possível excluir a conta: ' + (apiData.error || 'Falha na confirmação do servidor. Sua conta permanece ativa.'));
+            return;
+          }
+        } else {
+          // NÃO fazer logout e NÃO informar sucesso se a exclusão falhar (Remediação A02)
+          alert('Não foi possível excluir a conta: ' + (error.message || 'Falha no servidor. Sua conta permanece ativa.'));
+          return;
+        }
+      } else if (data && typeof data === 'object' && 'deleted' in data && !(data as any).deleted) {
+        alert('A exclusão da conta não foi confirmada pelo servidor.');
+        return;
+      }
+
+      clearAllHealthStorage();
       await signOut();
       window.location.href = '/';
     } catch (err: any) {
-      alert('Erro ao excluir conta: ' + (err.message || 'Tente novamente'));
+      alert('Erro ao excluir conta: ' + (err?.message || 'Verifique sua conexão e tente novamente.'));
     } finally {
       setIsDeletingAccount(false);
     }
@@ -343,8 +372,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     e.preventDefault();
     setPasswordMsg(null);
 
-    if (newPassword.length < 6) {
-      setPasswordMsg({ type: 'error', text: 'A senha deve ter no mínimo 6 caracteres.' });
+    const policy = validatePasswordPolicy(newPassword);
+    if (!policy.isValid) {
+      setPasswordMsg({ type: 'error', text: policy.error || 'A senha não atende aos critérios mínimos de segurança.' });
       return;
     }
 
@@ -1009,7 +1039,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="password"
                   required
-                  placeholder="Mínimo 6 caracteres"
+                  minLength={8}
+                  placeholder="Mínimo 8 caracteres (maiúscula, número e símbolo)"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"

@@ -94,6 +94,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
 
   // Loading & Error States
   const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [isSavingExam, setIsSavingExam] = useState(false);
   const [processingStage, setProcessingStage] = useState("");
   const [modalError, setModalError] = useState<string | null>(null);
   const [isOpeningFile, setIsOpeningFile] = useState(false);
@@ -173,12 +174,13 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
   const handleFileSelect = async (file: File) => {
     if (!file) return;
 
-    // Validação estrita no cliente
+    // Validação estrita no cliente (MIME E extensão devem ser simultaneamente válidos; proibir SVG)
     const validMimes = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
     const isExtensionValid = /\.(pdf|jpg|jpeg|png|webp)$/i.test(file.name);
+    const isSvg = /\.svg$/i.test(file.name) || (file.type && file.type.toLowerCase().includes("svg"));
 
-    if (!validMimes.includes(file.type) && !isExtensionValid) {
-      setModalError("Formato não suportado. Envie um arquivo PDF, JPG, PNG ou WebP.");
+    if (isSvg || !validMimes.includes(file.type) || !isExtensionValid) {
+      setModalError("Formato não suportado ou divergente. Envie um arquivo PDF, JPG, PNG ou WebP legítimo.");
       return;
     }
 
@@ -291,12 +293,15 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
     setAddMode("upload");
   };
 
-  const handleSaveConfirmedExam = (e: React.FormEvent) => {
+  const handleSaveConfirmedExam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       setModalError("O título do exame é obrigatório.");
       return;
     }
+
+    setModalError(null);
+    setIsSavingExam(true);
 
     const resolvedFamilyMemberId = (targetMemberId && targetMemberId !== "fam-me") ? targetMemberId : null;
 
@@ -314,72 +319,79 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
       ai_summary: aiSummary || "Exame registrado com sucesso.",
       ai_simple_translation: aiSimpleTranslation || "Resultados organizados no prontuário.",
       ai_key_findings: keyFindings,
-      status: "processed",
+      status: "normal",
       created_at: new Date().toISOString(),
     };
 
-    saveExam(newExam);
+    try {
+      // Aguarda confirmação real do banco de dados antes de atualizar a UI ou fechar o modal (Remediação A07)
+      await saveExam(newExam);
 
-    // Sincronizar automaticamente os biomarcadores encontrados com os Indicadores de Saúde (Glicose, Colesterol, Vitamina D, etc.)
-    const getIndicatorCategory = (paramName: string): HealthIndicator['category'] => {
-      const lower = paramName.toLowerCase();
-      if (lower.includes('glic') || lower.includes('insul') || lower.includes('ureia') || lower.includes('creat') || lower.includes('hba1c') || lower.includes('glicad')) return 'Metabólico';
-      if (lower.includes('colest') || lower.includes('hdl') || lower.includes('ldl') || lower.includes('triglic') || lower.includes('lipid')) return 'Lipídico';
-      if (lower.includes('vitam') || lower.includes('ferritin') || lower.includes('ferro') || lower.includes('b12')) return 'Vitaminas';
-      if (lower.includes('tsh') || lower.includes('t3') || lower.includes('t4') || lower.includes('hormon') || lower.includes('testost') || lower.includes('cortisol')) return 'Hormonal';
-      return 'Vital';
-    };
+      // Sincronizar automaticamente os biomarcadores encontrados com os Indicadores de Saúde
+      const getIndicatorCategory = (paramName: string): HealthIndicator['category'] => {
+        const lower = paramName.toLowerCase();
+        if (lower.includes('glic') || lower.includes('insul') || lower.includes('ureia') || lower.includes('creat') || lower.includes('hba1c') || lower.includes('glicad')) return 'Metabólico';
+        if (lower.includes('colest') || lower.includes('hdl') || lower.includes('ldl') || lower.includes('triglic') || lower.includes('lipid')) return 'Lipídico';
+        if (lower.includes('vitam') || lower.includes('ferritin') || lower.includes('ferro') || lower.includes('b12')) return 'Vitaminas';
+        if (lower.includes('tsh') || lower.includes('t3') || lower.includes('t4') || lower.includes('hormon') || lower.includes('testost') || lower.includes('cortisol')) return 'Hormonal';
+        return 'Vital';
+      };
 
-    const mapFindingStatus = (st: 'normal' | 'altered' | 'attention'): HealthIndicator['status'] => {
-      if (st === 'normal') return 'normal';
-      if (st === 'attention') return 'borderline';
-      return 'high';
-    };
+      const mapFindingStatus = (st: 'normal' | 'altered' | 'attention'): HealthIndicator['status'] => {
+        if (st === 'normal') return 'normal';
+        if (st === 'attention') return 'borderline';
+        return 'high';
+      };
 
-    const toSafeIsoDate = (d?: string) => {
-      if (!d) return new Date().toISOString();
-      if (d.includes('/')) {
-        const parts = d.split('/');
-        if (parts.length === 3) {
-          const [day, month, year] = parts;
-          return new Date(`${year}-${month}-${day}T12:00:00Z`).toISOString();
+      const toSafeIsoDate = (d?: string) => {
+        if (!d) return new Date().toISOString();
+        if (d.includes('/')) {
+          const parts = d.split('/');
+          if (parts.length === 3) {
+            const [day, month, year] = parts;
+            return new Date(`${year}-${month}-${day}T12:00:00Z`).toISOString();
+          }
+        }
+        const dt = new Date(d.includes('T') ? d : `${d}T12:00:00Z`);
+        return isNaN(dt.getTime()) ? new Date().toISOString() : dt.toISOString();
+      };
+
+      if (Array.isArray(keyFindings) && keyFindings.length > 0) {
+        for (const finding of keyFindings) {
+          if (!finding.parameter || !finding.value) continue;
+
+          const valStr = finding.value.toString();
+          const numMatch = valStr.match(/([\d.,]+)\s*([a-zA-Z/%³\-_]+)?/);
+          const numVal = numMatch ? parseFloat(numMatch[1].replace(',', '.')) : 0;
+          const unit = numMatch?.[2] || "";
+
+          await saveIndicator({
+            id: "ind-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+            user_id: "usr-default",
+            family_member_id: resolvedFamilyMemberId,
+            name: finding.parameter,
+            category: getIndicatorCategory(finding.parameter),
+            value: isNaN(numVal) ? 0 : numVal,
+            unit: unit,
+            status: mapFindingStatus(finding.status),
+            measured_at: toSafeIsoDate(examDate),
+            created_at: new Date().toISOString(),
+          });
         }
       }
-      const dt = new Date(d.includes('T') ? d : `${d}T12:00:00Z`);
-      return isNaN(dt.getTime()) ? new Date().toISOString() : dt.toISOString();
-    };
 
-    if (Array.isArray(keyFindings) && keyFindings.length > 0) {
-      for (const finding of keyFindings) {
-        if (!finding.parameter || !finding.value) continue;
-
-        const valStr = finding.value.toString();
-        const numMatch = valStr.match(/([\d.,]+)\s*([a-zA-Z/%³\-_]+)?/);
-        const numVal = numMatch ? parseFloat(numMatch[1].replace(',', '.')) : 0;
-        const unit = numMatch?.[2] || "";
-
-        saveIndicator({
-          id: "ind-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
-          user_id: "usr-default",
-          family_member_id: resolvedFamilyMemberId,
-          name: finding.parameter,
-          category: getIndicatorCategory(finding.parameter),
-          value: isNaN(numVal) ? 0 : numVal,
-          unit: unit,
-          status: mapFindingStatus(finding.status),
-          measured_at: toSafeIsoDate(examDate),
-          created_at: new Date().toISOString(),
-        });
-      }
+      trackEvent('exam_created', { category, has_file: Boolean(fileMetadata) });
+      onRefreshExams();
+      setShowAddModal(false);
+      resetForm();
+    } catch (err: any) {
+      setModalError(err?.message || "Não foi possível salvar o exame no servidor. Verifique sua conexão e tente novamente.");
+    } finally {
+      setIsSavingExam(false);
     }
-
-    trackEvent('exam_created', { category, has_file: Boolean(fileMetadata) });
-    onRefreshExams();
-    setShowAddModal(false);
-    resetForm();
   };
 
-  const handleSyncExamToIndicators = (exam: LabExam) => {
+  const handleSyncExamToIndicators = async (exam: LabExam) => {
     if (!exam.ai_key_findings || exam.ai_key_findings.length === 0) return;
 
     const toSafeIsoDate = (d?: string) => {
@@ -412,30 +424,34 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
 
     const examMemberId = (exam.family_member_id && exam.family_member_id !== "fam-me") ? exam.family_member_id : null;
 
-    for (const finding of exam.ai_key_findings) {
-      if (!finding.parameter || !finding.value) continue;
+    try {
+      for (const finding of exam.ai_key_findings) {
+        if (!finding.parameter || !finding.value) continue;
 
-      const valStr = finding.value.toString();
-      const numMatch = valStr.match(/([\d.,]+)\s*([a-zA-Z/%³\-_]+)?/);
-      const numVal = numMatch ? parseFloat(numMatch[1].replace(',', '.')) : 0;
-      const unit = numMatch?.[2] || "";
+        const valStr = finding.value.toString();
+        const numMatch = valStr.match(/([\d.,]+)\s*([a-zA-Z/%³\-_]+)?/);
+        const numVal = numMatch ? parseFloat(numMatch[1].replace(',', '.')) : 0;
+        const unit = numMatch?.[2] || "";
 
-      saveIndicator({
-        id: "ind-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
-        user_id: "usr-default",
-        family_member_id: examMemberId,
-        name: finding.parameter,
-        category: getIndicatorCategory(finding.parameter),
-        value: isNaN(numVal) ? 0 : numVal,
-        unit: unit,
-        status: mapFindingStatus(finding.status),
-        measured_at: toSafeIsoDate(exam.exam_date),
-        created_at: new Date().toISOString(),
-      });
+        await saveIndicator({
+          id: "ind-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+          user_id: "usr-default",
+          family_member_id: examMemberId,
+          name: finding.parameter,
+          category: getIndicatorCategory(finding.parameter),
+          value: isNaN(numVal) ? 0 : numVal,
+          unit: unit,
+          status: mapFindingStatus(finding.status),
+          measured_at: toSafeIsoDate(exam.exam_date),
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      onRefreshExams();
+      alert("Biomarcadores sincronizados com sucesso no Painel de Indicadores!");
+    } catch (err: any) {
+      alert(err?.message || "Erro ao sincronizar biomarcadores no servidor.");
     }
-
-    onRefreshExams();
-    alert("Biomarcadores sincronizados com sucesso no Painel de Indicadores!");
   };
 
   const handleViewOriginalFile = async (storagePath?: string, examId?: string) => {
@@ -466,11 +482,15 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm("Deseja remover este exame do prontuário?")) {
-      deleteExam(id);
-      onRefreshExams();
-      if (selectedExam?.id === id) setSelectedExam(null);
+      try {
+        await deleteExam(id);
+        onRefreshExams();
+        if (selectedExam?.id === id) setSelectedExam(null);
+      } catch (err: any) {
+        alert(err?.message || "Não foi possível remover o exame no servidor.");
+      }
     }
   };
 
@@ -1166,10 +1186,11 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
 
                   <button
                     type="submit"
-                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition"
+                    disabled={isSavingExam}
+                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Confirmar & Salvar no Prontuário</span>
+                    <span>{isSavingExam ? "Salvando no Servidor..." : "Confirmar & Salvar no Prontuário"}</span>
                   </button>
                 </div>
               </form>
@@ -1305,9 +1326,10 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
 
                     <button
                       type="submit"
-                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md cursor-pointer transition"
+                      disabled={isSavingExam}
+                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-xl shadow-md cursor-pointer transition"
                     >
-                      Salvar Exame
+                      {isSavingExam ? "Salvando..." : "Salvar Exame"}
                     </button>
                   </div>
                 </div>

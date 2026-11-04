@@ -32,6 +32,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
   const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
   const [selectedType, setSelectedType] = useState<string>("todos");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Form State
   const [title, setTitle] = useState("");
@@ -55,9 +57,15 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     }
   };
 
-  const handleAddSubmit = (e: React.FormEvent) => {
+  const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      setFormError("O título do evento é obrigatório.");
+      return;
+    }
+
+    setFormError(null);
+    setIsSaving(true);
 
     const newRecord: HealthRecord = {
       id: "rec-" + Date.now(),
@@ -72,14 +80,20 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
       created_at: new Date().toISOString(),
     };
 
-    saveHealthRecord(newRecord);
-    onRefreshRecords();
-    setShowAddModal(false);
+    try {
+      await saveHealthRecord(newRecord);
+      onRefreshRecords();
+      setShowAddModal(false);
 
-    // Reset Form
-    setTitle("");
-    setDescription("");
-    setDoctorOrInstitution("");
+      // Reset Form
+      setTitle("");
+      setDescription("");
+      setDoctorOrInstitution("");
+    } catch (err: any) {
+      setFormError(err?.message || "Não foi possível salvar o registro clínico no servidor.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -161,10 +175,14 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
               <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 font-mono">
                 <span>{rec.event_date}</span>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (window.confirm("Remover evento do histórico?")) {
-                      deleteHealthRecord(rec.id);
-                      onRefreshRecords();
+                      try {
+                        await deleteHealthRecord(rec.id);
+                        onRefreshRecords();
+                      } catch (err: any) {
+                        alert(err?.message || "Não foi possível excluir o registro no servidor.");
+                      }
                     }
                   }}
                   className="p-1 hover:text-rose-500 transition"
@@ -228,6 +246,11 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             </div>
 
             <form onSubmit={handleAddSubmit} className="space-y-3 text-xs">
+              {formError && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-700 dark:text-rose-300 font-medium">
+                  {formError}
+                </div>
+              )}
               <div>
                 <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">{tDict.titleLabel} *</label>
                 <input
@@ -299,9 +322,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
+                  disabled={isSaving}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs rounded-xl shadow-xs"
                 >
-                  {tDict.saveBtn}
+                  {isSaving ? dictionary.common.saving : tDict.saveBtn}
                 </button>
               </div>
             </form>

@@ -18,8 +18,8 @@ interface FamilyProfilesModalProps {
   members: FamilyMember[];
   activeMemberId: string;
   onSelectMember: (id: string) => void;
-  onAddMember: (member: FamilyMember) => void;
-  onDeleteMember: (id: string) => void;
+  onAddMember: (member: FamilyMember) => Promise<void> | void;
+  onDeleteMember: (id: string) => Promise<void> | void;
 }
 
 export const FamilyProfilesModal: React.FC<FamilyProfilesModalProps> = ({
@@ -35,7 +35,7 @@ export const FamilyProfilesModal: React.FC<FamilyProfilesModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleOnboardingCompleted = (data: any) => {
+  const handleOnboardingCompleted = async (data: any): Promise<{ success: boolean; error?: string }> => {
     const newMember: FamilyMember = {
       id: "fam-" + Date.now(),
       user_id: "usr-default",
@@ -56,9 +56,17 @@ export const FamilyProfilesModal: React.FC<FamilyProfilesModalProps> = ({
       created_at: new Date().toISOString(),
     };
 
-    onAddMember(newMember);
-    trackEvent('family_member_created', { is_family_context: true });
-    setShowOnboarding(false);
+    try {
+      await onAddMember(newMember);
+      trackEvent('family_member_created', { is_family_context: true });
+      setShowOnboarding(false);
+      return { success: true };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || "Não foi possível salvar o perfil familiar no servidor.",
+      };
+    }
   };
 
   return (

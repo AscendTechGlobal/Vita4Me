@@ -41,11 +41,11 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.
 
 export const supabaseAdmin = (supabaseUrl && supabaseServiceKey)
   ? createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    })
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
   : null;
 
 // ==============================================================================
@@ -109,27 +109,27 @@ async function generateGeminiContentWithRetry(ai: GoogleGenAI, params: any, maxR
 // ==============================================================================
 app.use(
   helmet({
-    contentSecurityPolicy: IS_PROD
-      ? {
-          directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://js.stripe.com"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-            fontSrc: ["'self'", "https://fonts.gstatic.com"],
-            imgSrc: ["'self'", "data:", "blob:", "https:", "https://*.supabase.co"],
-            connectSrc: [
-              "'self'",
-              "https://*.supabase.co",
-              "https://api.stripe.com",
-              "https://generativelanguage.googleapis.com",
-              "https://*.resend.com",
-            ],
-            frameSrc: ["'self'", "https://js.stripe.com", "https://hooks.stripe.com"],
-            objectSrc: ["'none'"],
-            upgradeInsecureRequests: [],
-          },
-        }
-      : false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'none'"],
+        scriptSrc: ["'self'", "https://js.stripe.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "blob:", "https:", "https://*.supabase.co"],
+        connectSrc: [
+          "'self'",
+          "https://*.supabase.co",
+          "https://api.stripe.com",
+          "https://generativelanguage.googleapis.com",
+          "https://*.resend.com",
+        ],
+        frameSrc: ["'self'", "https://js.stripe.com", "https://hooks.stripe.com"],
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: IS_PROD ? [] : null,
+      },
+    },
     crossOriginEmbedderPolicy: false,
     frameguard: { action: "deny" },
     xContentTypeOptions: true,
@@ -141,28 +141,29 @@ app.use(
 );
 
 const isAllowedOrigin = (origin?: string): boolean => {
-  // Permite requisições sem header Origin (navegação direta do navegador, apps móveis, curl, server-to-server)
-  if (!origin) return true;
-  if (!IS_PROD) return true;
+  if (!origin) return false;
 
   try {
     const parsed = new URL(origin);
     const host = parsed.hostname.toLowerCase();
 
-    // Localhost / Loopback de desenvolvimento
-    if (host === "localhost" || host === "127.0.0.1") return true;
+    // Localhost / Loopback apenas em desenvolvimento
+    if (!IS_PROD && (host === "localhost" || host === "127.0.0.1")) return true;
 
-    // Domínios Vita4Me de produção
-    if (host === "vita4me.app" || host.endsWith(".vita4me.app")) return true;
+    // Domínios Vita4Me oficiais de produção
+    if (
+      host === "vita4me.app" ||
+      host.endsWith(".vita4me.app") ||
+      host === "vita4me.com.br" ||
+      host.endsWith(".vita4me.com.br") ||
+      host === "vita4me.com" ||
+      host.endsWith(".vita4me.com")
+    ) {
+      return true;
+    }
 
-    // Google Cloud Run (*.run.app)
-    if (host.endsWith(".run.app")) return true;
-
-    // Railway (*.railway.app)
-    if (host.endsWith(".railway.app")) return true;
-
-    // Vercel (*.vercel.app)
-    if (host.endsWith(".vercel.app")) return true;
+    // Serviço Cloud Run oficial do Vita4Me
+    if (host === "vita4me-438239784654.southamerica-east1.run.app") return true;
 
     // APP_URL explícita do ambiente se definida
     if (APP_URL) {
@@ -180,26 +181,53 @@ const isAllowedOrigin = (origin?: string): boolean => {
   }
 };
 
-const corsMiddleware = cors({
-  origin: (origin, callback) => {
-    if (isAllowedOrigin(origin)) {
-      callback(null, true);
-    } else {
-      // Bloqueia CORS omitindo o header Access-Control-Allow-Origin sem estourar Erro 500 fatal no Express
-      callback(null, false);
-    }
-  },
-  credentials: true,
-});
-
-// Recursos estáticos (/assets, imagens, css, js) possuem acesso livre e nunca são bloqueados por CORS
+// Separação estrita de CORS entre:
+// 1. Assets estáticos públicos (Access-Control-Allow-Origin: *, SEM Access-Control-Allow-Credentials)
+// 2. Rotas de API /api/* (Allowlist estrita de Origin; nunca combina '*' com Credentials)
+// 3. Navegação direta / páginas HTML (Sem headers CORS conflitantes)
 app.use((req, res, next) => {
-  if (req.path.startsWith("/assets/") || req.path.includes(".")) {
+  const isStaticAsset =
+    req.path.startsWith("/assets/") ||
+    /\.(css|js|mjs|png|jpg|jpeg|webp|svg|ico|woff|woff2|ttf|json|txt|xml|webmanifest)$/i.test(req.path);
+
+  if (isStaticAsset && !req.path.startsWith("/api/")) {
+    res.removeHeader("Access-Control-Allow-Credentials");
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     return next();
   }
-  return corsMiddleware(req, res, next);
+
+  if (req.path.startsWith("/api/")) {
+    res.setHeader("Vary", "Origin");
+    const requestOrigin = req.headers.origin;
+
+    // Requisições same-origin sem header Origin ou webhooks server-to-server
+    if (!requestOrigin) {
+      return next();
+    }
+
+    if (isAllowedOrigin(requestOrigin)) {
+      res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID");
+      if (req.method === "OPTIONS") {
+        return res.status(204).end();
+      }
+      return next();
+    }
+
+    // Origem cruzada não autorizada tentando acessar a API
+    return res.status(403).json({
+      error: "Origem não autorizada pela política de CORS.",
+      code: "CORS_ORIGIN_DENIED",
+    });
+  }
+
+  // Para páginas HTML (/, /login, /app, etc.), garantir que NUNCA haja combinação de '*' com credentials
+  res.removeHeader("Access-Control-Allow-Origin");
+  res.removeHeader("Access-Control-Allow-Credentials");
+  return next();
 });
 
 // ==============================================================================
@@ -340,7 +368,7 @@ app.post(
           const subscription = event.data.object as Stripe.Subscription;
           const customerId = typeof subscription.customer === "string" ? subscription.customer : null;
           const status = subscription.status; // 'active', 'trialing', 'past_due', 'canceled', 'unpaid'
-          
+
           let subscriptionStatus: "active" | "inactive" | "past_due" | "canceled" | "trialing" = "active";
           if (status === "trialing") subscriptionStatus = "trialing";
           else if (status === "past_due" || status === "unpaid") subscriptionStatus = "past_due";
@@ -448,7 +476,7 @@ app.post(
       return res.json({ received: true });
     } catch (dbErr: any) {
       console.error("❌ Erro ao atualizar banco a partir do Stripe Webhook:", dbErr);
-      
+
       // Registrar falha no evento para permitir reprocessamento no retry do Stripe
       if (supabaseAdmin) {
         await supabaseAdmin
@@ -672,7 +700,7 @@ const requireAiAccess = async (req: AuthenticatedRequest, res: Response, next: N
 
     // 2. Período de Teste Grátis (Trial de 7 dias)
     // Calcula o término do trial a partir de trial_ends_at ou created_at + 7 dias
-    const trialEndDate = profile.trial_ends_at 
+    const trialEndDate = profile.trial_ends_at
       ? new Date(profile.trial_ends_at)
       : new Date(new Date(profile.created_at || now).getTime() + 7 * 24 * 60 * 60 * 1000);
 
@@ -744,19 +772,121 @@ app.get(["/api/ready", "/ready"], async (req, res) => {
 });
 
 // ==============================================================================
-// 8.0 CADASTRO DIRETO COM AUTO-CONFIRMAÇÃO & BOAS-VINDAS (ZERO ATRITO SMTP)
+// 8.0 CADASTRO COM VALIDAÇÃO SERVER-SIDE DE SENHA (A08) E CONSENTIMENTOS (A03)
 // ==============================================================================
+function validateServerPasswordPolicy(password: unknown): { isValid: boolean; error: string | null } {
+  if (typeof password !== "string") {
+    return { isValid: false, error: "Senha inválida." };
+  }
+  const hasMinLength = password.length >= 8;
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[^A-Za-z0-9]/.test(password);
+
+  if (!hasMinLength || !hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+    return {
+      isValid: false,
+      error: "A senha deve conter no mínimo 8 caracteres, incluindo letra maiúscula, minúscula, número e símbolo especial.",
+    };
+  }
+  return { isValid: true, error: null };
+}
+
+async function recordUserConsentsAudit(params: {
+  userId: string;
+  documentVersion: string;
+  source: string;
+  ip?: string;
+  userAgent?: string;
+}) {
+  if (!supabaseAdmin) return;
+  const ipHash = params.ip
+    ? crypto.createHash("sha256").update(params.ip).digest("hex").slice(0, 32)
+    : null;
+  const acceptedAt = new Date().toISOString();
+
+  const rows = [
+    {
+      user_id: params.userId,
+      consent_type: "terms_of_use",
+      document_version: params.documentVersion,
+      accepted: true,
+      accepted_at: acceptedAt,
+      source: params.source,
+      ip_hash: ipHash,
+      user_agent: (params.userAgent || "").slice(0, 255) || null,
+    },
+    {
+      user_id: params.userId,
+      consent_type: "privacy_policy",
+      document_version: params.documentVersion,
+      accepted: true,
+      accepted_at: acceptedAt,
+      source: params.source,
+      ip_hash: ipHash,
+      user_agent: (params.userAgent || "").slice(0, 255) || null,
+    },
+    {
+      user_id: params.userId,
+      consent_type: "health_data_processing",
+      document_version: params.documentVersion,
+      accepted: true,
+      accepted_at: acceptedAt,
+      source: params.source,
+      ip_hash: ipHash,
+      user_agent: (params.userAgent || "").slice(0, 255) || null,
+    },
+  ];
+
+  try {
+    await supabaseAdmin.from("user_consents").insert(rows);
+  } catch {
+    // Caso a tabela user_consents ainda não tenha sido aplicada no banco, o registro auditável também permanece em auth.users.raw_user_meta_data
+  }
+}
+
 app.post("/api/auth/register", async (req: Request, res: Response) => {
   try {
-    const { email, password, fullName } = req.body || {};
+    const { email, password, fullName, consents } = req.body || {};
     const cleanEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
-    const cleanName = typeof fullName === "string" ? fullName.trim() : "Paciente Vita4Me";
+    const cleanName = typeof fullName === "string" && fullName.trim() ? fullName.trim() : "Paciente Vita4Me";
 
-    if (!cleanEmail || !password || typeof password !== "string" || password.length < 8) {
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return res.status(400).json({
-        error: "Informe um e-mail válido e uma senha com no mínimo 8 caracteres.",
+        error: "Por favor, informe um endereço de e-mail válido.",
+        code: "INVALID_EMAIL",
       });
     }
+
+    // Validação Server-Side da Política Única de Senha (A08)
+    const pwdCheck = validateServerPasswordPolicy(password);
+    if (!pwdCheck.isValid) {
+      return res.status(400).json({
+        error: pwdCheck.error,
+        code: "WEAK_PASSWORD",
+      });
+    }
+
+    // Validação Server-Side Obrigatória dos Consentimentos LGPD (A03)
+    if (
+      !consents ||
+      typeof consents !== "object" ||
+      consents.termsAccepted !== true ||
+      consents.privacyAccepted !== true ||
+      consents.healthDataAccepted !== true
+    ) {
+      return res.status(400).json({
+        error: "É obrigatório aceitar os Termos de Uso, a Política de Privacidade e o Consentimento para Tratamento de Dados de Saúde (Art. 11 da LGPD).",
+        code: "CONSENT_REQUIRED",
+      });
+    }
+
+    const docVersion =
+      typeof consents.documentVersion === "string" && consents.documentVersion.trim()
+        ? consents.documentVersion.trim().slice(0, 20)
+        : "2.0";
+    const acceptedAt = new Date().toISOString();
 
     if (!supabaseAdmin || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return res.status(503).json({
@@ -771,6 +901,13 @@ app.post("/api/auth/register", async (req: Request, res: Response) => {
       email_confirm: true,
       user_metadata: {
         full_name: cleanName,
+        consents_accepted_v2: true,
+        consents: {
+          terms_of_use: { accepted: true, version: docVersion, accepted_at: acceptedAt },
+          privacy_policy: { accepted: true, version: docVersion, accepted_at: acceptedAt },
+          health_data_processing: { accepted: true, version: docVersion, accepted_at: acceptedAt },
+          source: "api_register",
+        },
       },
     });
 
@@ -783,7 +920,18 @@ app.post("/api/auth/register", async (req: Request, res: Response) => {
         });
       }
       return res.status(400).json({
-        error: error.message || "Não foi possível criar a conta.",
+        error: "Não foi possível criar a conta com os dados informados.",
+        code: "REGISTER_FAILED",
+      });
+    }
+
+    if (data.user?.id) {
+      await recordUserConsentsAudit({
+        userId: data.user.id,
+        documentVersion: docVersion,
+        source: "web_signup",
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
       });
     }
 
@@ -798,11 +946,136 @@ app.post("/api/auth/register", async (req: Request, res: Response) => {
       success: true,
       userId: data.user?.id,
       autoConfirmed: true,
+      consentsRecorded: true,
+      documentVersion: docVersion,
     });
   } catch (err: any) {
-    console.error("❌ Erro em /api/auth/register:", err);
+    console.error("❌ Erro em /api/auth/register:", err?.message || err);
     return res.status(500).json({
       error: "Erro interno ao processar seu cadastro.",
+    });
+  }
+});
+
+/**
+ * ENDPOINT 8.0.1: REGISTRO AUDITÁVEL DE CONSENTIMENTOS PARA CONTAS OAUTH/GOOGLE (A03)
+ */
+app.post("/api/auth/consents", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId || !supabaseAdmin) {
+      return res.status(401).json({ error: "Não autenticado." });
+    }
+
+    const { termsAccepted, privacyAccepted, healthDataAccepted, documentVersion, source } = req.body || {};
+    if (termsAccepted !== true || privacyAccepted !== true || healthDataAccepted !== true) {
+      return res.status(400).json({
+        error: "Todos os consentimentos obrigatórios (Termos, Privacidade e Dados de Saúde) devem ser aceitos.",
+        code: "CONSENT_REQUIRED",
+      });
+    }
+
+    const docVersion =
+      typeof documentVersion === "string" && documentVersion.trim()
+        ? documentVersion.trim().slice(0, 20)
+        : "2.0";
+    const consentSource =
+      typeof source === "string" && source.trim() ? source.trim().slice(0, 40) : "oauth_consent_gate";
+    const acceptedAt = new Date().toISOString();
+
+    await supabaseAdmin.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        consents_accepted_v2: true,
+        consents: {
+          terms_of_use: { accepted: true, version: docVersion, accepted_at: acceptedAt },
+          privacy_policy: { accepted: true, version: docVersion, accepted_at: acceptedAt },
+          health_data_processing: { accepted: true, version: docVersion, accepted_at: acceptedAt },
+          source: consentSource,
+        },
+      },
+    });
+
+    await recordUserConsentsAudit({
+      userId,
+      documentVersion: docVersion,
+      source: consentSource,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    return res.json({
+      success: true,
+      documentVersion: docVersion,
+      acceptedAt,
+    });
+  } catch (err: any) {
+    console.error("❌ Erro em /api/auth/consents:", err?.message || err);
+    return res.status(500).json({ error: "Não foi possível registrar os consentimentos." });
+  }
+});
+
+/**
+ * ENDPOINT 8.0.2: EXCLUSÃO COMPLETA E VERIFICADA DE CONTA (A02 — LGPD Art. 18, VI)
+ * Vinculado exclusivamente ao usuário autenticado no token JWT (req.user.id).
+ */
+app.delete("/api/auth/account", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId || !supabaseAdmin) {
+      return res.status(401).json({ deleted: false, error: "Usuário não autenticado." });
+    }
+
+    // 1. Remover arquivos do cofre local pertencentes ao usuário
+    const userLocalDir = path.join(process.cwd(), "data", "medical-documents", userId);
+    if (fs.existsSync(userLocalDir)) {
+      try {
+        fs.rmSync(userLocalDir, { recursive: true, force: true });
+      } catch { }
+    }
+
+    // 2. Remover arquivos do bucket privado medical-documents no Supabase Storage
+    try {
+      const { data: files } = await supabaseAdmin.storage
+        .from("medical-documents")
+        .list(`${userId}/exams`);
+      if (Array.isArray(files) && files.length > 0) {
+        const paths = files.map((f) => `${userId}/exams/${f.name}`);
+        await supabaseAdmin.storage.from("medical-documents").remove(paths);
+      }
+    } catch { }
+
+    // 3. Remover registros das tabelas clínicas do usuário
+    await Promise.allSettled([
+      supabaseAdmin.from("daily_habits").delete().eq("user_id", userId),
+      supabaseAdmin.from("health_records").delete().eq("user_id", userId),
+      supabaseAdmin.from("medications").delete().eq("user_id", userId),
+      supabaseAdmin.from("health_indicators").delete().eq("user_id", userId),
+      supabaseAdmin.from("lab_exams").delete().eq("user_id", userId),
+      supabaseAdmin.from("family_members").delete().eq("user_id", userId),
+      supabaseAdmin.from("user_consents").delete().eq("user_id", userId),
+      supabaseAdmin.from("profiles").delete().eq("id", userId),
+    ]);
+
+    // 4. Excluir usuário do Supabase Auth e confirmar
+    const { error: deleteErr } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (deleteErr) {
+      console.error("[DELETE_ACCOUNT] Falha ao remover auth.users:", deleteErr.message);
+      return res.status(500).json({
+        deleted: false,
+        error: "Não foi possível concluir a exclusão da conta no servidor de autenticação.",
+      });
+    }
+
+    return res.status(200).json({
+      deleted: true,
+      userId,
+      deletedAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.error("❌ Erro em DELETE /api/auth/account:", err?.message || err);
+    return res.status(500).json({
+      deleted: false,
+      error: "Erro interno ao excluir a conta.",
     });
   }
 });
@@ -841,21 +1114,46 @@ function verifyLocalSignedUrl(userId: string, filePath: string, expiresStr: stri
 }
 
 /**
- * Validação rigorosa de Magic Bytes no Backend (Detecção de MIME real e proteção contra arquivos maliciosos)
+ * Validação rigorosa de Magic Bytes e integridade estrutural no Backend (Remediação A10)
  */
 function detectRealMimeType(buffer: Buffer): string | null {
-  if (buffer.length < 4) return null;
-  // PDF: %PDF (0x25 0x50 0x44 0x46)
-  if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+  if (!buffer || buffer.length < 32) return null;
+
+  // Bloqueio explícito de payloads SVG/HTML/XML/Script disfarçados
+  const headText = buffer.subarray(0, Math.min(buffer.length, 512)).toString("utf8").toLowerCase();
+  if (
+    headText.includes("<svg") ||
+    headText.includes("<!doctype html") ||
+    headText.includes("<html") ||
+    headText.includes("<script")
+  ) {
+    return null;
+  }
+
+  // PDF: %PDF- (0x25 0x50 0x44 0x46 0x2D) + verificação de marcador %%EOF para rejeitar PDFs truncados
+  if (
+    buffer[0] === 0x25 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x44 &&
+    buffer[3] === 0x46 &&
+    buffer[4] === 0x2d
+  ) {
+    const tailText = buffer.subarray(Math.max(0, buffer.length - 1024)).toString("latin1");
+    if (!tailText.includes("%%EOF")) {
+      return null;
+    }
     return "application/pdf";
   }
-  // JPEG: 0xFF 0xD8 0xFF
+
+  // JPEG: SOI 0xFF 0xD8 0xFF e EOI 0xFF 0xD9 (ou tamanho mínimo estrutural)
   if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    if (buffer.length < 64) return null;
     return "image/jpeg";
   }
-  // PNG: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
+
+  // PNG: 8-byte signature + chunk IHDR
   if (
-    buffer.length >= 8 &&
+    buffer.length >= 33 &&
     buffer[0] === 0x89 &&
     buffer[1] === 0x50 &&
     buffer[2] === 0x4e &&
@@ -863,18 +1161,21 @@ function detectRealMimeType(buffer: Buffer): string | null {
     buffer[4] === 0x0d &&
     buffer[5] === 0x0a &&
     buffer[6] === 0x1a &&
-    buffer[7] === 0x0a
+    buffer[7] === 0x0a &&
+    buffer.toString("ascii", 12, 16) === "IHDR"
   ) {
     return "image/png";
   }
+
   // WebP: RIFF....WEBP
   if (
-    buffer.length >= 12 &&
+    buffer.length >= 32 &&
     buffer.toString("utf8", 0, 4) === "RIFF" &&
     buffer.toString("utf8", 8, 12) === "WEBP"
   ) {
     return "image/webp";
   }
+
   return null;
 }
 
@@ -884,18 +1185,18 @@ function detectRealMimeType(buffer: Buffer): string | null {
 function extractJsonFromText(rawText: string): any {
   if (!rawText || typeof rawText !== "string") return null;
   const clean = rawText.trim();
-  
+
   // 1. Tentar parse direto
   try {
     return JSON.parse(clean);
-  } catch {}
+  } catch { }
 
   // 2. Extrair bloco markdown ```json ... ``` ou ``` ... ```
   const codeBlockMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (codeBlockMatch && codeBlockMatch[1]) {
     try {
       return JSON.parse(codeBlockMatch[1].trim());
-    } catch {}
+    } catch { }
   }
 
   // 3. Extrair primeiro array JSON balanceado [ ... ]
@@ -904,7 +1205,7 @@ function extractJsonFromText(rawText: string): any {
   if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
     try {
       return JSON.parse(clean.slice(firstBracket, lastBracket + 1));
-    } catch {}
+    } catch { }
   }
 
   // 4. Extrair primeiro objeto JSON balanceado { ... }
@@ -913,7 +1214,7 @@ function extractJsonFromText(rawText: string): any {
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
     try {
       return JSON.parse(clean.slice(firstBrace, lastBrace + 1));
-    } catch {}
+    } catch { }
   }
 
   return null;
@@ -944,8 +1245,37 @@ app.post("/api/ai/analyze-exam-document", requireAuth, requireAiAccess, async (r
     }
     currentStage = "FILE_RECEIVED";
 
-    // Remover header de data URI se presente (ex: data:application/pdf;base64,...)
-    const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, "");
+    // Rejeitar imediatamente se o Data-URI ou fileName declarar SVG, HTML ou executável (Remediação A10)
+    const rawName = typeof fileName === "string" ? fileName.trim() : "";
+    if (
+      /\.(svg|html|htm|xml|exe|bat|cmd|sh|js|mjs|php|py)$/i.test(rawName) ||
+      /^data:(image\/svg|text\/html|application\/x-msdownload|application\/javascript)/i.test(base64Data)
+    ) {
+      return res.status(415).json({
+        success: false,
+        code: "FORBIDDEN_FILE_TYPE",
+        message: "Tipo de arquivo proibido por política de segurança. Envie apenas PDF, JPG, PNG ou WebP.",
+        requestId,
+      });
+    }
+
+    // Extrair MIME declarado no Data-URI (se houver) e validar sintaxe estrita do Base64
+    let declaredDataUriMime: string | null = null;
+    const dataUriMatch = base64Data.match(/^data:([^;]+);base64,(.*)$/s);
+    const cleanBase64 = (dataUriMatch ? dataUriMatch[2] : base64Data).replace(/\s+/g, "");
+    if (dataUriMatch && dataUriMatch[1]) {
+      declaredDataUriMime = dataUriMatch[1].toLowerCase().trim();
+    }
+
+    if (!cleanBase64 || cleanBase64.length < 44 || !/^[A-Za-z0-9+/]+={0,2}$/.test(cleanBase64)) {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_BASE64",
+        message: "O conteúdo do arquivo está malformado ou truncado.",
+        requestId,
+      });
+    }
+
     const buffer = Buffer.from(cleanBase64, "base64");
 
     // Limite máximo de 15MB
@@ -955,30 +1285,61 @@ app.post("/api/ai/analyze-exam-document", requireAuth, requireAiAccess, async (r
     }
     currentStage = "SIZE_OK";
 
-    // Validação estrita de Magic Bytes no Backend (Zero confiança em extensão/MIME do cliente)
+    // Validação estrita de Magic Bytes e integridade estrutural no Backend
     const detectedMimeType = detectRealMimeType(buffer);
     if (!detectedMimeType) {
       return res.status(415).json({
         success: false,
         code: "INVALID_MIME",
-        message: "Formato de arquivo não suportado ou corrompido. Envie um arquivo PDF, JPG, PNG ou WebP válido.",
+        message: "Formato de arquivo não suportado, truncado ou corrompido. Envie um arquivo PDF, JPG, PNG ou WebP íntegro.",
         requestId,
       });
     }
+
+    // Verificar coerência entre o MIME declarado no Data-URI (se presente) e os Magic Bytes reais
+    if (declaredDataUriMime && declaredDataUriMime !== detectedMimeType) {
+      return res.status(415).json({
+        success: false,
+        code: "MIME_MISMATCH",
+        message: "Conflito entre o tipo MIME declarado e a assinatura binária real do arquivo.",
+        requestId,
+      });
+    }
+
+    // Verificar coerência entre a extensão do fileName (se fornecida) e os Magic Bytes reais
+    if (rawName && rawName.includes(".")) {
+      const extMatch = rawName.toLowerCase().match(/\.([a-z0-9]+)$/);
+      const ext = extMatch ? extMatch[1] : "";
+      const expectedMimesByExt: Record<string, string> = {
+        pdf: "application/pdf",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        png: "image/png",
+        webp: "image/webp",
+      };
+      if (!expectedMimesByExt[ext] || expectedMimesByExt[ext] !== detectedMimeType) {
+        return res.status(415).json({
+          success: false,
+          code: "EXTENSION_MIME_MISMATCH",
+          message: "A extensão do arquivo não corresponde ao conteúdo real do documento.",
+          requestId,
+        });
+      }
+    }
     currentStage = "MIME_OK";
 
-    // Sanitização rigorosa do nome do arquivo para prevenção de Path Traversal
-    const rawName = typeof fileName === "string" ? fileName : "exame";
-    const sanitizedBase = rawName
-      .replace(/[^a-zA-Z0-9._-]/g, "_")
-      .replace(/\.{2,}/g, "_")
-      .slice(0, 80);
-    const fileExt = detectedMimeType === "application/pdf" ? ".pdf" : detectedMimeType === "image/png" ? ".png" : detectedMimeType === "image/webp" ? ".webp" : ".jpg";
-    const finalFileName = sanitizedBase.endsWith(fileExt) ? sanitizedBase : `${sanitizedBase}${fileExt}`;
-    
-    // Caminho isolado por usuário: {user_id}/exams/{uuid}_{filename}
+    // Nome de armazenamento gerado 100% no servidor sem concatenar input do usuário no path (Remediação A10)
+    const fileExt =
+      detectedMimeType === "application/pdf"
+        ? ".pdf"
+        : detectedMimeType === "image/png"
+          ? ".png"
+          : detectedMimeType === "image/webp"
+            ? ".webp"
+            : ".jpg";
     const fileId = crypto.randomUUID();
-    storagePath = `${userId}/exams/${fileId}_${finalFileName}`;
+    const finalFileName = `exam_${fileId}${fileExt}`;
+    storagePath = `${userId}/exams/${finalFileName}`;
 
     // 1. Armazenamento obrigatório no cofre persistente local (Garantia da Gaveta de Exames da Vita4Me)
     const localTarget = path.join(LOCAL_VAULT_DIR, storagePath);
@@ -1139,29 +1500,29 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
     const rawFindings = primaryExam?.ai_key_findings || primaryExam?.key_findings || primaryExam?.findings || primaryExam?.biomarkers || primaryExam?.markers || primaryExam?.parametros || [];
     const normalizedFindings = Array.isArray(rawFindings)
       ? rawFindings.map((f: any) => {
-          const param = f.parameter || f.parametro || f.name || f.nome || "";
-          const val = f.value || f.valor || f.result || f.resultado || "";
-          const ref = f.reference_interval || f.reference || f.referencia || f.intervalo || "";
-          const expl = f.simpleExplanation || f.explanation || f.explicacao || f.descricao || "";
+        const param = f.parameter || f.parametro || f.name || f.nome || "";
+        const val = f.value || f.valor || f.result || f.resultado || "";
+        const ref = f.reference_interval || f.reference || f.referencia || f.intervalo || "";
+        const expl = f.simpleExplanation || f.explanation || f.explicacao || f.descricao || "";
 
-          let st: "normal" | "altered" | "attention" = "normal";
-          const rawStatus = String(f.status || "").toLowerCase().trim();
-          if (rawStatus === "normal" || rawStatus === "bom" || rawStatus === "otimo") {
-            st = "normal";
-          } else if (rawStatus === "attention" || rawStatus === "atencao" || rawStatus === "borderline" || rawStatus === "limite") {
-            st = "attention";
-          } else if (rawStatus === "altered" || rawStatus === "alterado" || rawStatus === "high" || rawStatus === "low" || rawStatus === "alto" || rawStatus === "baixo") {
-            st = "altered";
-          }
+        let st: "normal" | "altered" | "attention" = "normal";
+        const rawStatus = String(f.status || "").toLowerCase().trim();
+        if (rawStatus === "normal" || rawStatus === "bom" || rawStatus === "otimo") {
+          st = "normal";
+        } else if (rawStatus === "attention" || rawStatus === "atencao" || rawStatus === "borderline" || rawStatus === "limite") {
+          st = "attention";
+        } else if (rawStatus === "altered" || rawStatus === "alterado" || rawStatus === "high" || rawStatus === "low" || rawStatus === "alto" || rawStatus === "baixo") {
+          st = "altered";
+        }
 
-          return {
-            parameter: param,
-            value: val,
-            reference_interval: ref,
-            status: st,
-            simpleExplanation: expl,
-          };
-        }).filter((f: any) => Boolean(f.parameter))
+        return {
+          parameter: param,
+          value: val,
+          reference_interval: ref,
+          status: st,
+          simpleExplanation: expl,
+        };
+      }).filter((f: any) => Boolean(f.parameter))
       : [];
 
     const finalTitle = primaryExam?.title || primaryExam?.titulo || "Laudo Laboratorial";
@@ -1173,7 +1534,7 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
     const finalTranslation = primaryExam?.ai_simple_translation || primaryExam?.simple_translation || primaryExam?.traducao || "Os parâmetros do exame foram organizados no prontuário.";
 
     const durationMs = Date.now() - startTime;
-    console.log(`[ANALYZE_EXAM][SUCCESS] requestId=${requestId} stage=RESPONSE_OK duration_ms=${durationMs} markers_count=${normalizedFindings.length} date=${finalExamDate} lab=${finalLab}`);
+    console.log(`[ANALYZE_EXAM][SUCCESS] requestId=${requestId} stage=RESPONSE_OK duration_ms=${durationMs} markers_count=${normalizedFindings.length}`);
 
     return res.json({
       success: true,
@@ -1344,11 +1705,11 @@ app.post("/api/exams/cancel-upload", requireAuth, async (req: AuthenticatedReque
 
     if (userId && storagePath && typeof storagePath === "string" && storagePath.startsWith(`${userId}/`)) {
       if (supabaseAdmin) {
-        await supabaseAdmin.storage.from("medical-documents").remove([storagePath]).catch(() => {});
+        await supabaseAdmin.storage.from("medical-documents").remove([storagePath]).catch(() => { });
       }
       const localFilePath = path.join(LOCAL_VAULT_DIR, storagePath);
       if (fs.existsSync(localFilePath)) {
-        try { fs.unlinkSync(localFilePath); } catch {}
+        try { fs.unlinkSync(localFilePath); } catch { }
       }
     }
     return res.json({ success: true });
@@ -1431,10 +1792,10 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
     res.status(500).json({ error: "Falha ao processar o exame de forma segura." });
   }
 });
-   /**
- * ENDPOINT 2: ASSISTENTE CONVERSACIONAL VITA4ME
- * Protegido com validação JWT, autorização server-side, tolerância a contexto parcial e isolamento horizontal de dados
- */
+/**
+* ENDPOINT 2: ASSISTENTE CONVERSACIONAL VITA4ME
+* Protegido com validação JWT, autorização server-side, tolerância a contexto parcial e isolamento horizontal de dados
+*/
 app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
   const requestId = crypto.randomUUID();
   const startTime = Date.now();
@@ -1512,10 +1873,10 @@ app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: Authenticated
         : dbClient.from("medications").select("name, dosage, frequency, schedule_times, instructions, is_continuous").eq("user_id", userId).eq("is_active", true).order("created_at", { ascending: false }).limit(15)
       ),
 
-      // Linha do Tempo / Histórico
+      // Linha do Tempo / Histórico (compatível com schema live doctor_name / facility_name)
       (validatedFamilyMemberId
-        ? dbClient.from("health_records").select("record_type, title, description, doctor_or_institution, event_date, tags").eq("user_id", userId).eq("family_member_id", validatedFamilyMemberId).order("event_date", { ascending: false }).limit(15)
-        : dbClient.from("health_records").select("record_type, title, description, doctor_or_institution, event_date, tags").eq("user_id", userId).order("event_date", { ascending: false }).limit(15)
+        ? dbClient.from("health_records").select("record_type, title, description, doctor_name, facility_name, event_date").eq("user_id", userId).eq("family_member_id", validatedFamilyMemberId).order("event_date", { ascending: false }).limit(15)
+        : dbClient.from("health_records").select("record_type, title, description, doctor_name, facility_name, event_date").eq("user_id", userId).order("event_date", { ascending: false }).limit(15)
       ),
 
       // Hábitos Recentes
@@ -1542,13 +1903,13 @@ app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: Authenticated
     // Formatação amigável dos exames com biomarcadores estruturados (ai_key_findings)
     const formattedExams = exams.length > 0
       ? exams.map((e: any) => {
-          let findingsSummary = "";
-          if (Array.isArray(e.ai_key_findings) && e.ai_key_findings.length > 0) {
-            const markers = e.ai_key_findings.map((f: any) => `${f.parameter}: ${f.value} (${f.status || 'normal'}${f.reference_interval ? `, Ref: ${f.reference_interval}` : ''})`).join("; ");
-            findingsSummary = ` | Marcadores: [${markers}]`;
-          }
-          return `• ${e.title} (${e.exam_date || 'Data não informada'}${e.laboratory ? ` - ${e.laboratory}` : ''}): ${e.ai_summary || e.ai_simple_translation || 'Sem resumo'}${findingsSummary}`;
-        }).join("\n")
+        let findingsSummary = "";
+        if (Array.isArray(e.ai_key_findings) && e.ai_key_findings.length > 0) {
+          const markers = e.ai_key_findings.map((f: any) => `${f.parameter}: ${f.value} (${f.status || 'normal'}${f.reference_interval ? `, Ref: ${f.reference_interval}` : ''})`).join("; ");
+          findingsSummary = ` | Marcadores: [${markers}]`;
+        }
+        return `• ${e.title} (${e.exam_date || 'Data não informada'}${e.laboratory ? ` - ${e.laboratory}` : ''}): ${e.ai_summary || e.ai_simple_translation || 'Sem resumo'}${findingsSummary}`;
+      }).join("\n")
       : "Nenhum exame cadastrado no prontuário.";
 
     const formattedMeds = medications.length > 0
@@ -1560,7 +1921,10 @@ app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: Authenticated
       : "Nenhum indicador de saúde recente registrado.";
 
     const formattedRecords = records.length > 0
-      ? records.map((r: any) => `• [${r.record_type?.toUpperCase() || 'EVENTO'}] ${r.title} (${r.event_date || 'Data não informada'}${r.doctor_or_institution ? ` - ${r.doctor_or_institution}` : ''}): ${r.description || ''}`).join("\n")
+      ? records.map((r: any) => {
+        const docInst = r.doctor_or_institution || r.doctor_name || r.facility_name || "";
+        return `• [${r.record_type?.toUpperCase() || 'EVENTO'}] ${r.title} (${r.event_date || 'Data não informada'}${docInst ? ` - ${docInst}` : ''}): ${r.description || ''}`;
+      }).join("\n")
       : "Nenhum evento clínico recente registrado.";
 
     const formattedHabits = habits.length > 0
@@ -2228,7 +2592,25 @@ async function startServer() {
   // Registrado no final do pipeline para capturar qualquer erro não tratado
   // ==============================================================================
   app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-    const requestId = (req as any).requestId || "unknown";
+    const requestId = (req as any).requestId || crypto.randomUUID();
+
+    // Tratamento seguro de JSON malformado enviado pelo cliente (400 Bad Request em vez de 500)
+    if (err instanceof SyntaxError && "status" in err && (err as any).status === 400 && "body" in err) {
+      return res.status(400).json({
+        error: "Corpo JSON inválido.",
+        code: "INVALID_JSON",
+        requestId,
+      });
+    }
+
+    if (err?.type === "entity.too.large" || err?.status === 413) {
+      return res.status(413).json({
+        error: "O payload enviado excede o tamanho máximo permitido.",
+        code: "PAYLOAD_TOO_LARGE",
+        requestId,
+      });
+    }
+
     console.error(
       JSON.stringify({
         timestamp: new Date().toISOString(),
@@ -2237,7 +2619,7 @@ async function startServer() {
         method: req.method,
         route: req.path,
         service: "vita4me_api_unhandled",
-        error_message: err.message || "Erro desconhecido",
+        error_code: err?.code || "UNHANDLED_ERROR",
       })
     );
 

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { Lock, CheckCircle2, AlertCircle, Loader2, KeyRound } from "lucide-react";
+import { validatePasswordPolicy } from "../lib/passwordPolicy";
 
 export const UpdatePasswordModal: React.FC = () => {
   const { isPasswordRecovery, setIsPasswordRecovery, updateUserPassword } = useAuth();
@@ -12,12 +13,14 @@ export const UpdatePasswordModal: React.FC = () => {
 
   if (!isPasswordRecovery) return null;
 
+  const policy = validatePasswordPolicy(password);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
-    if (password.length < 6) {
-      setErrorMsg("A senha deve ter no mínimo 6 caracteres.");
+    if (!policy.isValid) {
+      setErrorMsg(policy.error);
       return;
     }
 
@@ -84,7 +87,8 @@ export const UpdatePasswordModal: React.FC = () => {
                 <input
                   type="password"
                   required
-                  placeholder="Mínimo 6 caracteres"
+                  minLength={8}
+                  placeholder="Mínimo 8 caracteres (maiúscula, número e símbolo)"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition"
