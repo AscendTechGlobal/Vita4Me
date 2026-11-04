@@ -162,8 +162,8 @@ const isAllowedOrigin = (origin?: string): boolean => {
       return true;
     }
 
-    // Serviço Cloud Run oficial do Vita4Me
-    if (host === "vita4me-438239784654.southamerica-east1.run.app") return true;
+    // Serviços Cloud Run oficiais do Vita4Me (*.run.app)
+    if (host.endsWith(".run.app") && host.includes("vita4me")) return true;
 
     // APP_URL explícita do ambiente se definida
     if (APP_URL) {
