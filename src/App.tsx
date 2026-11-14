@@ -22,6 +22,7 @@ const HealthAIChatView = lazy(() => import("./components/HealthAIChatView").then
 const SettingsView = lazy(() => import("./components/SettingsView").then(m => ({ default: m.SettingsView })));
 const AuthConfirmView = lazy(() => import("./components/AuthConfirmView").then(m => ({ default: m.AuthConfirmView })));
 const ResetPasswordView = lazy(() => import("./components/ResetPasswordView").then(m => ({ default: m.ResetPasswordView })));
+const LegalPageView = lazy(() => import("./components/LegalPageView").then(m => ({ default: m.LegalPageView })));
 const BillingModal = lazy(() => import("./components/BillingModal").then(m => ({ default: m.BillingModal })));
 
 const LoadingSpinner = () => (
@@ -247,6 +248,9 @@ export function App() {
                 <Route path="/cadastro" element={<AuthPageView initialTab="signup" />} />
                 <Route path="/auth/confirm" element={<AuthConfirmWrapper />} />
                 <Route path="/reset-password" element={<ResetPasswordView />} />
+                <Route path="/privacidade" element={<LegalPageView documentId="privacidade" />} />
+                <Route path="/termos" element={<LegalPageView documentId="termos" />} />
+                <Route path="/cookies" element={<LegalPageView documentId="cookies" />} />
 
                 {/* ── ROTAS PROTEGIDAS /app/* ── */}
                 <Route

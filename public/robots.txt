@@ -27,4 +27,4 @@ User-agent: CCBot
 Allow: /
 
 # XML Sitemap
-Sitemap: https://vita4me.app/sitemap.xml
+Sitemap: https://vita4me.com/sitemap.xml

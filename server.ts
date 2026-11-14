@@ -885,7 +885,7 @@ app.post("/api/auth/register", async (req: Request, res: Response) => {
     const docVersion =
       typeof consents.documentVersion === "string" && consents.documentVersion.trim()
         ? consents.documentVersion.trim().slice(0, 20)
-        : "2.0";
+        : "1.0";
     const acceptedAt = new Date().toISOString();
 
     if (!supabaseAdmin || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -978,7 +978,7 @@ app.post("/api/auth/consents", requireAuth, async (req: AuthenticatedRequest, re
     const docVersion =
       typeof documentVersion === "string" && documentVersion.trim()
         ? documentVersion.trim().slice(0, 20)
-        : "2.0";
+        : "1.0";
     const consentSource =
       typeof source === "string" && source.trim() ? source.trim().slice(0, 40) : "oauth_consent_gate";
     const acceptedAt = new Date().toISOString();

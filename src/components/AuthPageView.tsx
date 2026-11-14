@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { hasActivePasswordRecoveryFlag } from "../lib/supabase";
 import { trackEvent, trackPageView } from "../lib/analytics";
 import { validatePasswordPolicy, NEUTRAL_PASSWORD_RESET_MESSAGE } from "../lib/passwordPolicy";
-import { LegalDocumentsModal, LegalTab } from "./LegalDocumentsModal";
+import { LegalDocumentsModal, LegalTab, LEGAL_DOCUMENT_VERSION } from "./LegalDocumentsModal";
 import {
   Eye,
   EyeOff,
@@ -59,7 +59,7 @@ export const AuthPageView: React.FC<AuthPageViewProps> = ({ initialTab = "login"
             termsAccepted: true,
             privacyAccepted: true,
             healthDataAccepted: true,
-            documentVersion: "2.0",
+            documentVersion: LEGAL_DOCUMENT_VERSION,
             acceptedAt: new Date().toISOString(),
           })
         );
@@ -181,7 +181,7 @@ export const AuthPageView: React.FC<AuthPageViewProps> = ({ initialTab = "login"
           termsAccepted,
           privacyAccepted: termsAccepted,
           healthDataAccepted: healthConsentAccepted,
-          documentVersion: "2.0",
+          documentVersion: LEGAL_DOCUMENT_VERSION,
         });
         if (error) {
           setErrorMsg(error);

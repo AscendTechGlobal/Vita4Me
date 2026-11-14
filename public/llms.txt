@@ -3,7 +3,7 @@
 
 ## Visão Geral
 - **Nome:** Vita4Me
-- **Site Oficial:** https://vita4me.app
+- **Site Oficial:** https://vita4me.com
 - **Objetivo:** Organizar, traduzir e preservar o histórico de saúde pessoal e familiar para a vida toda.
 - **Tecnologias:** Inteligência Artificial (OCR e LLM), PostgreSQL com Row Level Security (RLS), Criptografia AES-256.
 

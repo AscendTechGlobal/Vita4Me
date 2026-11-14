@@ -2,7 +2,7 @@ import { Resend } from "resend";
 
 const apiKey = process.env.RESEND_API_KEY;
 const defaultFrom = process.env.EMAIL_FROM || "Vita4Me <onboarding@resend.dev>";
-const appUrl = process.env.APP_URL || "https://vita4me.app";
+const appUrl = process.env.APP_URL || "https://vita4me.com";
 
 export const getResendClient = (): Resend | null => {
   if (!process.env.RESEND_API_KEY) {
