@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import type { EmailOtpType } from "@supabase/supabase-js";
+import { supabase, isSupabaseConfigured, hasActivePasswordRecoveryFlag } from "../lib/supabase";
 import {
   CheckCircle2,
   AlertTriangle,
@@ -40,6 +41,13 @@ export const AuthConfirmView: React.FC<AuthConfirmViewProps> = ({ onGoToLogin })
 
         const hashParams = new URLSearchParams(hash.startsWith("#") ? hash.substring(1) : hash);
         const searchParams = new URLSearchParams(search);
+
+        // 0. Não capturar links de password recovery no fluxo de confirmação de cadastro/e-mail
+        const urlType = (searchParams.get("type") || hashParams.get("type") || "").toLowerCase();
+        if (urlType === "recovery" || (!urlType && hasActivePasswordRecoveryFlag())) {
+          window.location.replace(`/reset-password${search}${hash}`);
+          return;
+        }
 
         // 1. Verificar se o Supabase retornou erro explícito na URL
         const error = hashParams.get("error") || searchParams.get("error");
@@ -94,11 +102,15 @@ export const AuthConfirmView: React.FC<AuthConfirmViewProps> = ({ onGoToLogin })
 
         // 3. Fluxo Token Hash (?token_hash=...&type=signup|email) -> processar antes de limpar a URL
         const tokenHash = searchParams.get("token_hash") || hashParams.get("token_hash");
-        const otpType = (searchParams.get("type") || hashParams.get("type") || "email") as any;
+        const rawOtpType = (searchParams.get("type") || hashParams.get("type") || "email").toLowerCase();
+        const safeOtpType: EmailOtpType =
+          rawOtpType === "signup" || rawOtpType === "email_change" || rawOtpType === "recovery"
+            ? rawOtpType
+            : "email";
         if (tokenHash && isSupabaseConfigured) {
           const { error: otpError } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
-            type: otpType === "signup" ? "signup" : "email",
+            type: safeOtpType,
           });
           cleanUrl();
           if (otpError) {

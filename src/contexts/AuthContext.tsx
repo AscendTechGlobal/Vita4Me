@@ -1,9 +1,27 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import {
+  supabase,
+  isSupabaseConfigured,
+  markPasswordRecoveryActive,
+  clearPasswordRecoveryState,
+  hasActivePasswordRecoveryFlag,
+} from '../lib/supabase';
 import { clearAllHealthStorage, ensureStorageUserScope } from '../lib/healthStorage';
 import { validatePasswordPolicy } from '../lib/passwordPolicy';
 import { UserProfile } from '../types';
+
+const OFFICIAL_RECOVERY_REDIRECT_URL = 'https://vita4me.com/reset-password';
+
+export const getPasswordRecoveryRedirectUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname.toLowerCase();
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `${window.location.origin}/reset-password`;
+    }
+  }
+  return OFFICIAL_RECOVERY_REDIRECT_URL;
+};
 
 export interface SignupConsentPayload {
   termsAccepted: boolean;
@@ -34,7 +52,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecoveryState] = useState<boolean>(() => hasActivePasswordRecoveryFlag());
+
+  const setIsPasswordRecovery = (value: boolean) => {
+    if (value) {
+      markPasswordRecoveryActive();
+    } else {
+      clearPasswordRecoveryState();
+    }
+    setIsPasswordRecoveryState(value);
+  };
 
   const fetchProfile = async (userId: string): Promise<UserProfile | null> => {
     if (!isSupabaseConfigured) return null;
@@ -77,8 +104,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // Verificar tokens de recuperação na URL
-    if (window.location.hash.includes('type=recovery')) {
+    // Verificar tokens de recuperação na URL ou flag persistida na sessão antes da limpeza do hash pelo SDK
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashRaw = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+    const hashParams = new URLSearchParams(hashRaw);
+    const hasUrlError = Boolean(
+      searchParams.get('error') ||
+      searchParams.get('error_code') ||
+      hashParams.get('error') ||
+      hashParams.get('error_code')
+    );
+    const urlType = searchParams.get('type') || hashParams.get('type');
+
+    if (hasUrlError) {
+      setIsPasswordRecovery(false);
+    } else if (urlType === 'recovery' || hasActivePasswordRecoveryFlag()) {
       setIsPasswordRecovery(true);
     }
 
@@ -113,6 +153,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);
+      } else if (event === 'SIGNED_OUT') {
+        setIsPasswordRecovery(false);
       }
 
       if (session?.user) {
@@ -272,7 +314,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return { error: "Por favor, informe um endereço de e-mail válido." };
     }
-    const redirectUrl = `${window.location.origin}/#reset-password`;
+    const redirectUrl = getPasswordRecoveryRedirectUrl();
     // Não revelar se o e-mail existe ou não (prevenção de enumeração de contas)
     await supabase.auth.resetPasswordForEmail(cleanEmail, {
       redirectTo: redirectUrl,
@@ -290,8 +332,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     const { error } = await supabase.auth.updateUser({ password });
     if (error) {
-      return { error: "Não foi possível atualizar a senha. Tente novamente." };
+      const code = (error as { code?: string }).code?.toLowerCase() || '';
+      const msg = error.message?.toLowerCase() || '';
+      if (code === 'same_password' || msg.includes('different from the old password')) {
+        return { error: "A nova senha deve ser diferente da senha atual." };
+      }
+      if (code === 'weak_password' || msg.includes('weak password') || msg.includes('password should be')) {
+        return { error: "A nova senha não atende aos requisitos mínimos de segurança." };
+      }
+      if (
+        code === 'session_not_found' ||
+        msg.includes('session missing') ||
+        msg.includes('expired') ||
+        msg.includes('invalid token') ||
+        msg.includes('jwt')
+      ) {
+        return { error: "Sua sessão de recuperação expirou ou é inválida. Solicite um novo link de redefinição." };
+      }
+      if (code === 'over_request_rate_limit' || msg.includes('rate limit')) {
+        return { error: "Muitas tentativas em sequência. Aguarde alguns instantes e tente novamente." };
+      }
+      return { error: "Não foi possível atualizar a senha. Solicite um novo link se o problema persistir." };
     }
+    setIsPasswordRecovery(false);
     return { error: null };
   };
 
@@ -326,12 +389,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (typeof window !== "undefined") {
       try {
+        clearPasswordRecoveryState();
         clearAllHealthStorage();
         sessionStorage.clear();
       } catch (e) {
         // Silencioso
       }
     }
+    setIsPasswordRecoveryState(false);
     setUser(null);
     setProfile(null);
   };

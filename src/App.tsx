@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useOutletContext } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { hasActivePasswordRecoveryFlag } from "./lib/supabase";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -20,6 +21,7 @@ const HabitsView = lazy(() => import("./components/HabitsView").then(m => ({ def
 const HealthAIChatView = lazy(() => import("./components/HealthAIChatView").then(m => ({ default: m.HealthAIChatView })));
 const SettingsView = lazy(() => import("./components/SettingsView").then(m => ({ default: m.SettingsView })));
 const AuthConfirmView = lazy(() => import("./components/AuthConfirmView").then(m => ({ default: m.AuthConfirmView })));
+const ResetPasswordView = lazy(() => import("./components/ResetPasswordView").then(m => ({ default: m.ResetPasswordView })));
 const BillingModal = lazy(() => import("./components/BillingModal").then(m => ({ default: m.BillingModal })));
 
 const LoadingSpinner = () => (
@@ -170,9 +172,34 @@ const SettingsRoute: React.FC = () => {
 
 // ── COMPONENTE DE WRAPPER DA LANDING PAGE COM SUPORTE A BILLING MODAL ──
 const LandingPageWrapper: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isPasswordRecovery } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isBillingModalOpen, setIsBillingModalOpen] = React.useState(false);
+
+  const searchParams = new URLSearchParams(location.search);
+  const hashRaw = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
+  const hashParams = new URLSearchParams(hashRaw);
+  const urlType = (searchParams.get("type") || hashParams.get("type") || "").toLowerCase();
+  const urlErrorCode = (searchParams.get("error_code") || hashParams.get("error_code") || "").toLowerCase();
+  const urlError = (searchParams.get("error") || hashParams.get("error") || "").toLowerCase();
+  const urlErrorDesc = (searchParams.get("error_description") || hashParams.get("error_description") || "").toLowerCase();
+
+  const hasRecoveryFallbackError =
+    urlErrorCode === "otp_expired" ||
+    urlErrorCode === "otp_disabled" ||
+    (urlError === "access_denied" && (Boolean(urlErrorCode) || urlErrorDesc.includes("email link") || urlErrorDesc.includes("expired")));
+
+  const shouldRouteToResetPassword =
+    isPasswordRecovery ||
+    hasActivePasswordRecoveryFlag() ||
+    urlType === "recovery" ||
+    location.hash.startsWith("#reset-password") ||
+    hasRecoveryFallbackError;
+
+  if (shouldRouteToResetPassword) {
+    return <Navigate to={`/reset-password${location.search}${location.hash}`} replace />;
+  }
 
   return (
     <>
@@ -219,6 +246,7 @@ export function App() {
                 <Route path="/login" element={<AuthPageView initialTab="login" />} />
                 <Route path="/cadastro" element={<AuthPageView initialTab="signup" />} />
                 <Route path="/auth/confirm" element={<AuthConfirmWrapper />} />
+                <Route path="/reset-password" element={<ResetPasswordView />} />
 
                 {/* ── ROTAS PROTEGIDAS /app/* ── */}
                 <Route
