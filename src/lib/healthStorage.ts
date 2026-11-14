@@ -1,5 +1,5 @@
 import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from '../types';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured, getAuthHeaders } from './supabase';
 
 // Chaves legadas que NUNCA devem permanecer no localStorage/sessionStorage (Remediação A01)
 const LEGACY_CLINICAL_KEYS = [
@@ -351,16 +351,17 @@ export async function saveExam(exam: LabExam): Promise<LabExam> {
 }
 
 export async function deleteExam(id: string): Promise<void> {
-  const user = await requireAuthenticatedUser();
+  await requireAuthenticatedUser();
+  const headers = await getAuthHeaders();
 
-  const { error } = await supabase
-    .from('lab_exams')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', user.id);
+  const res = await fetch(`/api/exams/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers,
+  });
 
-  if (error) {
-    throw new Error(error.message || 'Não foi possível excluir o exame no servidor.');
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || !payload.success) {
+    throw new Error(payload.message || payload.error || 'Não foi possível excluir o exame no servidor.');
   }
 
   memoryStore.exams = memoryStore.exams.filter((e) => e.id !== id);

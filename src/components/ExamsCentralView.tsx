@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { 
   FileText, 
   Search, 
@@ -20,6 +20,7 @@ import {
   Download,
   FileSpreadsheet,
   FileImage,
+  FolderArchive,
   RefreshCw,
   Edit3,
   X,
@@ -32,6 +33,9 @@ import { getAuthHeaders } from "../lib/apiClient";
 import { saveExam, deleteExam, saveIndicator } from "../lib/healthStorage";
 import { trackEvent, trackAiUsage } from "../lib/analytics";
 import { useLanguage } from "../contexts/LanguageContext";
+import { DrawerSortOrder, ExamDrawerItem } from "../lib/examDocumentUtils";
+import { ExamDrawerView } from "./ExamDrawerView";
+import { ExamDocumentViewerModal } from "./ExamDocumentViewerModal";
 
 interface ExamsCentralViewProps {
   exams: LabExam[];
@@ -43,6 +47,7 @@ interface ExamsCentralViewProps {
 }
 
 type AddModalMode = "upload" | "review" | "manual";
+type CentralViewTab = "analyses" | "drawer";
 
 export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
   exams,
@@ -55,9 +60,16 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
   const { dictionary, language } = useLanguage();
   const eDict = dictionary.exams;
   const localeStr = language === 'en' ? 'en-US' : (language === 'es' ? 'es-ES' : 'pt-BR');
+  const [activeViewTab, setActiveViewTab] = useState<CentralViewTab>("analyses");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("Todas");
   const [selectedMemberFilter, setSelectedMemberFilter] = useState<string>("all");
+  const [drawerSortOrder, setDrawerSortOrder] = useState<DrawerSortOrder>("newest");
+  const [drawerItems, setDrawerItems] = useState<ExamDrawerItem[]>([]);
+  const [isLoadingDrawer, setIsLoadingDrawer] = useState(false);
+  const [drawerError, setDrawerError] = useState<string | null>(null);
+  const [viewerDocument, setViewerDocument] = useState<ExamDrawerItem | null>(null);
+  const [activeActionExamId, setActiveActionExamId] = useState<string | null>(null);
   const [targetMemberId, setTargetMemberId] = useState<string>(activeMember?.id || "fam-me");
   const [selectedExam, setSelectedExam] = useState<LabExam | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -382,6 +394,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
 
       trackEvent('exam_created', { category, has_file: Boolean(fileMetadata) });
       onRefreshExams();
+      loadDrawerItems();
       setShowAddModal(false);
       resetForm();
     } catch (err: any) {
@@ -454,7 +467,134 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
     }
   };
 
+  const loadDrawerItems = useCallback(async () => {
+    setIsLoadingDrawer(true);
+    setDrawerError(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch("/api/exams/drawer", {
+        method: "GET",
+        headers,
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || errJson.error || "Não foi possível carregar os documentos da Gaveta.");
+      }
+      const data = await res.json();
+      setDrawerItems(Array.isArray(data.items) ? data.items : []);
+    } catch (err: any) {
+      setDrawerError(err?.message || "Erro ao carregar a Gaveta de Exames.");
+    } finally {
+      setIsLoadingDrawer(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDrawerItems();
+  }, [loadDrawerItems, exams.length]);
+
+  const buildViewerItemFromExam = (exam: LabExam): ExamDrawerItem => {
+    const extMatch = (exam.file_url || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+    const ext = extMatch ? extMatch[1] : "pdf";
+    const fileType =
+      ext === "png" ? "PNG" : ext === "webp" ? "WEBP" : ext === "jpg" || ext === "jpeg" ? "JPG" : "PDF";
+    const mimeType =
+      fileType === "PNG"
+        ? "image/png"
+        : fileType === "WEBP"
+        ? "image/webp"
+        : fileType === "JPG"
+        ? "image/jpeg"
+        : "application/pdf";
+
+    return {
+      examId: exam.id,
+      familyMemberId: exam.family_member_id || null,
+      title: exam.title,
+      category: exam.category,
+      examDate: exam.exam_date || null,
+      laboratory: exam.laboratory || null,
+      doctorName: exam.doctor_name || null,
+      description: exam.ai_summary || null,
+      fileType,
+      mimeType,
+      fileExtension: ext,
+      fileSize: null,
+      uploadedAt: exam.created_at || null,
+      createdAt: exam.created_at,
+      isAvailable: Boolean(exam.file_url),
+    };
+  };
+
+  const handleOpenDocumentInViewer = (item: ExamDrawerItem) => {
+    setViewerDocument(item);
+  };
+
+  const handleDownloadDocument = async (item: ExamDrawerItem) => {
+    setActiveActionExamId(item.examId);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch("/api/exams/signed-url", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ examId: item.examId, mode: "download" }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || errJson.error || "Não foi possível baixar o arquivo original.");
+      }
+
+      const { signedUrl, fileName } = await res.json();
+      if (!signedUrl) {
+        throw new Error("Link seguro temporário indisponível.");
+      }
+
+      try {
+        const fileRes = await fetch(signedUrl);
+        if (!fileRes.ok) throw new Error("download_fetch_failed");
+        const blob = await fileRes.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = fileName || `${item.title}.${item.fileExtension || "pdf"}`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+      } catch {
+        window.open(signedUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (err: any) {
+      alert(err?.message || "Erro ao baixar o arquivo original.");
+    } finally {
+      setActiveActionExamId(null);
+    }
+  };
+
+  const handleOpenRelatedExam = (examId: string) => {
+    const matched = exams.find((e) => e.id === examId);
+    if (matched) {
+      setSelectedExam(matched);
+    } else {
+      alert("Registro clínico relacionado não encontrado na sessão atual. Atualizando a lista...");
+      onRefreshExams();
+    }
+  };
+
   const handleViewOriginalFile = async (storagePath?: string, examId?: string) => {
+    if (examId) {
+      const drawerMatch = drawerItems.find((d) => d.examId === examId);
+      if (drawerMatch) {
+        setViewerDocument(drawerMatch);
+        return;
+      }
+      const examMatch = exams.find((e) => e.id === examId);
+      if (examMatch) {
+        setViewerDocument(buildViewerItemFromExam(examMatch));
+        return;
+      }
+    }
     if (!storagePath && !examId) return;
 
     setIsOpeningFile(true);
@@ -463,7 +603,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
       const res = await fetch("/api/exams/signed-url", {
         method: "POST",
         headers,
-        body: JSON.stringify({ storagePath, examId }),
+        body: JSON.stringify({ examId, storagePath, mode: "view" }),
       });
 
       if (!res.ok) {
@@ -483,16 +623,21 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("Deseja remover este exame do prontuário?")) {
+    if (window.confirm("Deseja remover este exame e o arquivo original vinculado do prontuário?")) {
       try {
         await deleteExam(id);
-        onRefreshExams();
+        setDrawerItems((prev) => prev.filter((item) => item.examId !== id));
         if (selectedExam?.id === id) setSelectedExam(null);
+        if (viewerDocument?.examId === id) setViewerDocument(null);
+        onRefreshExams();
+        loadDrawerItems();
       } catch (err: any) {
-        alert(err?.message || "Não foi possível remover o exame no servidor.");
+        alert(err?.message || "Não foi possível remover o exame e seu arquivo no servidor.");
       }
     }
   };
+
+  const drawerFilesCount = drawerItems.length || exams.filter((e) => Boolean(e.file_url)).length;
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
@@ -524,6 +669,94 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
           <span>{eDict.uploadBtn}</span>
         </button>
       </div>
+
+      {/* View Switcher: Exames & Análises vs Gaveta de Exames */}
+      <div
+        className="inline-flex p-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs gap-1"
+        role="tablist"
+        aria-label="Visualizações da Central de Exames"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeViewTab === "analyses"}
+          onClick={() => setActiveViewTab("analyses")}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            activeViewTab === "analyses"
+              ? "bg-emerald-600 text-white shadow-xs"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <FileText className="w-3.5 h-3.5" />
+          <span>Exames & Análises</span>
+          <span
+            className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono ${
+              activeViewTab === "analyses"
+                ? "bg-white/20 text-white"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+            }`}
+          >
+            {exams.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeViewTab === "drawer"}
+          onClick={() => {
+            setActiveViewTab("drawer");
+            loadDrawerItems();
+          }}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            activeViewTab === "drawer"
+              ? "bg-emerald-600 text-white shadow-xs"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <FolderArchive className="w-3.5 h-3.5" />
+          <span>Gaveta de Exames</span>
+          <span
+            className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono ${
+              activeViewTab === "drawer"
+                ? "bg-white/20 text-white"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+            }`}
+          >
+            {drawerFilesCount}
+          </span>
+        </button>
+      </div>
+
+      {activeViewTab === "drawer" ? (
+        <ExamDrawerView
+          items={drawerItems}
+          isLoading={isLoadingDrawer}
+          errorMsg={drawerError}
+          searchTerm={searchTerm}
+          onSearchTermChange={setSearchTerm}
+          selectedCategory={selectedCategory}
+          onSelectCategory={setSelectedCategory}
+          selectedMemberFilter={selectedMemberFilter}
+          onSelectMemberFilter={(memberId) => {
+            setSelectedMemberFilter(memberId);
+            if (memberId !== "all" && onSelectFamilyMember) {
+              onSelectFamilyMember(memberId);
+            }
+          }}
+          sortOrder={drawerSortOrder}
+          onSortOrderChange={setDrawerSortOrder}
+          familyMembers={familyMembers}
+          totalExamsCount={exams.length}
+          activeActionExamId={activeActionExamId}
+          onRefreshDrawer={loadDrawerItems}
+          onOpenUploadModal={handleOpenAddModal}
+          onOpenDocument={handleOpenDocumentInViewer}
+          onDownloadDocument={handleDownloadDocument}
+          onOpenRelatedExam={handleOpenRelatedExam}
+        />
+      ) : (
+        <>
 
       {/* Clinical Disclaimer & Security Banner */}
       <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs">
@@ -724,6 +957,8 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Modal: View Exam Details */}
       {selectedExam && (
@@ -762,19 +997,40 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
 
               {/* Botão para visualizar arquivo original no Storage Seguro */}
               {selectedExam.file_url && (
-                <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center justify-between">
+                <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-semibold text-xs">
-                    <Lock className="w-4 h-4 text-emerald-600" />
-                    <span>Arquivo Original Criptografado Disponível</span>
+                    <Lock className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Arquivo Original Privado Disponível</span>
                   </div>
-                  <button
-                    onClick={() => handleViewOriginalFile(selectedExam.file_url, selectedExam.id)}
-                    disabled={isOpeningFile}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
-                  >
-                    {isOpeningFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
-                    <span>Abrir Arquivo Original</span>
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleViewOriginalFile(undefined, selectedExam.id)}
+                      disabled={isOpeningFile}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                    >
+                      {isOpeningFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                      <span>Abrir Arquivo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDownloadDocument(
+                          drawerItems.find((d) => d.examId === selectedExam.id) ||
+                            buildViewerItemFromExam(selectedExam)
+                        )
+                      }
+                      disabled={activeActionExamId === selectedExam.id}
+                      className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                    >
+                      {activeActionExamId === selectedExam.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5" />
+                      )}
+                      <span>Baixar</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1339,6 +1595,14 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal: In-App Document Viewer (PDF & Zoomable Image) */}
+      <ExamDocumentViewerModal
+        item={viewerDocument}
+        onClose={() => setViewerDocument(null)}
+        onDownload={handleDownloadDocument}
+        onOpenAnalysis={handleOpenRelatedExam}
+      />
     </div>
   );
 };

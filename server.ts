@@ -16,6 +16,10 @@ import {
 } from "./src/lib/emailService.js";
 import { billingService } from "./src/server/billing/billingService.js";
 import { processTrialReminders } from "./src/server/billing/trialReminderWorker.js";
+import {
+  deleteExamWithStorage,
+  sanitizeOwnedExamStoragePath,
+} from "./src/server/exams/examDeletionService.js";
 
 dotenv.config();
 
@@ -125,7 +129,7 @@ app.use(
           "https://generativelanguage.googleapis.com",
           "https://*.resend.com",
         ],
-        frameSrc: ["'self'", "https://js.stripe.com", "https://hooks.stripe.com"],
+        frameSrc: ["'self'", "blob:", "https://js.stripe.com", "https://hooks.stripe.com"],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: IS_PROD ? [] : null,
       },
@@ -1088,15 +1092,86 @@ if (!fs.existsSync(LOCAL_VAULT_DIR)) {
   fs.mkdirSync(LOCAL_VAULT_DIR, { recursive: true });
 }
 
-const LOCAL_STORAGE_SECRET = process.env.LOCAL_STORAGE_SECRET || process.env.VITE_SUPABASE_ANON_KEY || "vita4me-secure-vault-key-2026";
+const EXAM_DOCUMENT_SIGNED_URL_TTL_SECONDS = 300;
+const EPHEMERAL_FALLBACK_VAULT_SECRET = crypto.randomBytes(32).toString("hex");
+const LOCAL_STORAGE_SECRET =
+  process.env.LOCAL_STORAGE_SECRET ||
+  (process.env.SUPABASE_SERVICE_ROLE_KEY
+    ? crypto.createHash("sha256").update(`vita4me-vault:${process.env.SUPABASE_SERVICE_ROLE_KEY}`).digest("hex")
+    : EPHEMERAL_FALLBACK_VAULT_SECRET);
 
-function generateLocalSignedUrl(userId: string, filePath: string, expiresInSeconds = 900): string {
+function inferExamFileDescriptor(storagePathOrName?: string | null, mimeOverride?: string | null): {
+  extension: string;
+  fileType: "PDF" | "JPG" | "PNG" | "WEBP" | "ARQUIVO";
+  mimeType: string;
+} {
+  const mime = (mimeOverride || "").toLowerCase().trim();
+  const extMatch = (storagePathOrName || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  const ext = extMatch ? extMatch[1] : "";
+
+  if (mime === "application/pdf" || ext === "pdf") {
+    return { extension: "pdf", fileType: "PDF", mimeType: "application/pdf" };
+  }
+  if (mime === "image/png" || ext === "png") {
+    return { extension: "png", fileType: "PNG", mimeType: "image/png" };
+  }
+  if (mime === "image/webp" || ext === "webp") {
+    return { extension: "webp", fileType: "WEBP", mimeType: "image/webp" };
+  }
+  if (mime === "image/jpeg" || mime === "image/jpg" || ext === "jpg" || ext === "jpeg") {
+    return { extension: "jpg", fileType: "JPG", mimeType: "image/jpeg" };
+  }
+  return { extension: ext || "bin", fileType: "ARQUIVO", mimeType: mime || "application/octet-stream" };
+}
+
+function sanitizeDownloadFilename(title?: string | null, examDate?: string | null, ext = "pdf"): string {
+  const base = (title || "exame-vita4me")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60) || "exame-vita4me";
+  const safeDate = examDate && /^\d{4}-\d{2}-\d{2}$/.test(examDate) ? `-${examDate}` : "";
+  const safeExt = /^[a-z0-9]{2,5}$/i.test(ext) ? ext.toLowerCase() : "pdf";
+  return `${base}${safeDate}.${safeExt}`;
+}
+
+async function recordSecurityAuditEvent(params: {
+  userId: string;
+  eventType: string;
+  resourceType: string;
+  resourceId: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  if (!supabaseAdmin) return;
+  try {
+    await supabaseAdmin.from("security_audit_logs").insert({
+      user_id: params.userId,
+      event_type: params.eventType,
+      resource_type: params.resourceType,
+      resource_id: params.resourceId,
+      metadata: params.metadata || {},
+    });
+  } catch {
+    // Non-blocking audit trail (preserva disponibilidade mesmo se tabela opcional ainda não existir)
+  }
+}
+
+function generateLocalSignedUrl(
+  userId: string,
+  filePath: string,
+  expiresInSeconds = EXAM_DOCUMENT_SIGNED_URL_TTL_SECONDS,
+  options?: { disposition?: "inline" | "attachment"; filename?: string }
+): string {
   const expires = Date.now() + expiresInSeconds * 1000;
   const signature = crypto
     .createHmac("sha256", LOCAL_STORAGE_SECRET)
     .update(`${userId}:${filePath}:${expires}`)
     .digest("hex");
-  return `/api/exams/view-document?path=${encodeURIComponent(filePath)}&uid=${encodeURIComponent(userId)}&exp=${expires}&sig=${signature}`;
+  const disp = options?.disposition === "attachment" ? "&disposition=attachment" : "";
+  const fname = options?.filename ? `&filename=${encodeURIComponent(options.filename)}` : "";
+  return `/api/exams/view-document?path=${encodeURIComponent(filePath)}&uid=${encodeURIComponent(userId)}&exp=${expires}&sig=${signature}${disp}${fname}`;
 }
 
 function verifyLocalSignedUrl(userId: string, filePath: string, expiresStr: string, signature: string): boolean {
@@ -1574,14 +1649,135 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
 });
 
 /**
- * ENDPOINT 1.2: GERAR SIGNED URL TEMPORÁRIA PARA VISUALIZAÇÃO SEGURA DO EXAME
+ * ENDPOINT 1.1.5: GAVETA DE EXAMES — BIBLIOTECA DOCUMENTAL PRIVADA DE ARQUIVOS ORIGINAIS
+ * Lista somente exames do usuário autenticado com arquivo vinculado, sem expor paths internos do Storage.
+ */
+app.get("/api/exams/drawer", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const requestId = crypto.randomUUID();
+  try {
+    const userId = req.user?.id;
+    if (!userId || !supabaseAdmin) {
+      return res.status(401).json({ success: false, code: "AUTH_FAILED", message: "Usuário não autenticado.", requestId });
+    }
+
+    const familyMemberId = typeof req.query.familyMemberId === "string" ? req.query.familyMemberId.trim() : "";
+    if (familyMemberId && familyMemberId !== "all" && familyMemberId !== "fam-me") {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(familyMemberId)) {
+        return res.status(400).json({ success: false, code: "INVALID_MEMBER_ID", message: "Membro familiar inválido.", requestId });
+      }
+      const { data: ownedMember } = await supabaseAdmin
+        .from("family_members")
+        .select("id")
+        .eq("id", familyMemberId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!ownedMember) {
+        return res.status(403).json({ success: false, code: "ACCESS_DENIED", message: "Perfil familiar não autorizado.", requestId });
+      }
+    }
+
+    let query = supabaseAdmin
+      .from("lab_exams")
+      .select("id, user_id, family_member_id, title, category, exam_date, laboratory, doctor_name, file_url, ai_summary, created_at")
+      .eq("user_id", userId)
+      .not("file_url", "is", null)
+      .order("created_at", { ascending: false });
+
+    if (familyMemberId === "fam-me") {
+      query = query.is("family_member_id", null);
+    } else if (familyMemberId && familyMemberId !== "all") {
+      query = query.eq("family_member_id", familyMemberId);
+    }
+
+    const { data: examRows, error: examsErr } = await query;
+    if (examsErr) {
+      return res.status(500).json({ success: false, code: "DRAWER_QUERY_FAILED", message: "Não foi possível carregar os documentos da Gaveta.", requestId });
+    }
+
+    // Indexa metadados do bucket privado (tamanho, MIME e timestamp de envio) sem retornar storage paths ao cliente
+    const storageMetaMap = new Map<string, { size: number | null; mimeType: string | null; uploadedAt: string | null }>();
+    try {
+      const { data: listedObjects } = await supabaseAdmin.storage
+        .from("medical-documents")
+        .list(`${userId}/exams`, { limit: 1000 });
+      if (Array.isArray(listedObjects)) {
+        for (const obj of listedObjects) {
+          if (!obj?.name) continue;
+          const metaSize = typeof obj.metadata?.size === "number" ? obj.metadata.size : Number(obj.metadata?.size || 0) || null;
+          const metaMime = typeof obj.metadata?.mimetype === "string" ? obj.metadata.mimetype : null;
+          storageMetaMap.set(obj.name, {
+            size: metaSize,
+            mimeType: metaMime,
+            uploadedAt: obj.created_at || obj.updated_at || null,
+          });
+        }
+      }
+    } catch {
+      // Segue com fallback de metadados locais caso a listagem do Storage oscile
+    }
+
+    const items = (examRows || [])
+      .filter((row: any) => Boolean(row.file_url))
+      .map((row: any) => {
+        const sanitizedPath = sanitizeOwnedExamStoragePath(userId, row.file_url);
+        const fileNameKey = sanitizedPath ? path.posix.basename(sanitizedPath) : "";
+        const cloudMeta = fileNameKey ? storageMetaMap.get(fileNameKey) : undefined;
+
+        let fileSize = cloudMeta?.size ?? null;
+        let uploadedAt = cloudMeta?.uploadedAt || row.created_at || null;
+        let hasLocalCopy = false;
+
+        if (sanitizedPath) {
+          const localFilePath = path.join(LOCAL_VAULT_DIR, sanitizedPath);
+          if (fs.existsSync(localFilePath)) {
+            hasLocalCopy = true;
+            try {
+              const stat = fs.statSync(localFilePath);
+              if (fileSize === null) fileSize = stat.size;
+              if (!uploadedAt) uploadedAt = stat.birthtime?.toISOString() || stat.mtime?.toISOString() || null;
+            } catch { }
+          }
+        }
+
+        const descriptor = inferExamFileDescriptor(sanitizedPath || row.file_url, cloudMeta?.mimeType);
+        const isAvailable = Boolean(sanitizedPath) && (Boolean(cloudMeta) || hasLocalCopy || Boolean(supabaseAdmin));
+
+        return {
+          examId: row.id,
+          familyMemberId: row.family_member_id || null,
+          title: row.title || "Laudo Médico",
+          category: row.category || "Laboratorial",
+          examDate: row.exam_date || null,
+          laboratory: row.laboratory || null,
+          doctorName: row.doctor_name || null,
+          description: row.ai_summary || null,
+          fileType: descriptor.fileType,
+          mimeType: descriptor.mimeType,
+          fileExtension: descriptor.extension,
+          fileSize,
+          uploadedAt,
+          createdAt: row.created_at,
+          isAvailable,
+        };
+      });
+
+    return res.json({ success: true, items, requestId });
+  } catch (err: any) {
+    console.error(`[EXAMS_DRAWER][ERROR] requestId=${requestId} err=${err?.message || err}`);
+    return res.status(500).json({ success: false, code: "INTERNAL_ERROR", message: "Falha ao carregar a Gaveta de Exames.", requestId });
+  }
+});
+
+/**
+ * ENDPOINT 1.2: GERAR SIGNED URL TEMPORÁRIA (300s) PARA VISUALIZAÇÃO OU DOWNLOAD SEGURO DO EXAME
  * Validação rigorosa de titularidade: consulta lab_exams e confirma que o registro pertence a req.user.id
  */
 app.post("/api/exams/signed-url", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const requestId = crypto.randomUUID();
   try {
     const userId = req.user?.id;
-    const { storagePath, examId } = req.body;
+    const { storagePath, examId, mode } = req.body || {};
+    const accessMode: "view" | "download" = mode === "download" ? "download" : "view";
 
     if (!userId || (!storagePath && !examId)) {
       return res.status(400).json({ success: false, code: "INVALID_PARAMETERS", message: "Parâmetros inválidos.", requestId });
@@ -1592,57 +1788,109 @@ app.post("/api/exams/signed-url", requireAuth, async (req: AuthenticatedRequest,
     }
 
     let targetPath: string | null = null;
+    let examTitle: string | null = null;
+    let examDate: string | null = null;
+    let resolvedExamId: string | null = null;
 
-    // Se storagePath válido fornecido e pertencente ao usuário, usa diretamente
-    if (typeof storagePath === "string" && storagePath.startsWith(`${userId}/`)) {
-      targetPath = storagePath;
-    } else if (examId && typeof examId === "string") {
-      // Se for UUID válido do Supabase, consulta o banco
+    if (examId && typeof examId === "string") {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(examId);
-      if (isUuid) {
-        const { data: exam, error: examError } = await supabaseAdmin
-          .from("lab_exams")
-          .select("file_url, user_id")
-          .eq("id", examId)
+      if (!isUuid) {
+        return res.status(400).json({ success: false, code: "INVALID_EXAM_ID", message: "Identificador de exame inválido.", requestId });
+      }
+
+      const { data: exam, error: examError } = await supabaseAdmin
+        .from("lab_exams")
+        .select("id, file_url, user_id, family_member_id, title, exam_date")
+        .eq("id", examId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (examError || !exam || !exam.file_url) {
+        return res.status(403).json({ success: false, code: "ACCESS_DENIED", message: "Acesso não autorizado ou arquivo não encontrado.", requestId });
+      }
+
+      // Defesa adicional para dependentes familiares: confirma que family_member_id pertence ao titular
+      if (exam.family_member_id) {
+        const { data: member } = await supabaseAdmin
+          .from("family_members")
+          .select("id")
+          .eq("id", exam.family_member_id)
           .eq("user_id", userId)
           .maybeSingle();
-
-        if (!examError && exam?.file_url && exam.file_url.startsWith(`${userId}/`)) {
-          targetPath = exam.file_url;
+        if (!member) {
+          return res.status(403).json({ success: false, code: "ACCESS_DENIED", message: "Acesso familiar não autorizado.", requestId });
         }
       }
+
+      targetPath = sanitizeOwnedExamStoragePath(userId, exam.file_url);
+      examTitle = exam.title || null;
+      examDate = exam.exam_date || null;
+      resolvedExamId = exam.id;
+    } else if (typeof storagePath === "string") {
+      // Fallback estritamente sanitizado apenas quando ainda não há examId (ex: revisão pré-salvamento)
+      targetPath = sanitizeOwnedExamStoragePath(userId, storagePath);
     }
 
     if (!targetPath) {
       return res.status(403).json({ success: false, code: "ACCESS_DENIED", message: "Acesso não autorizado ou arquivo não encontrado.", requestId });
     }
 
-    // Normaliza targetPath: caso contenha o prefixo do bucket por engano, remove
-    const cleanStoragePath = targetPath.replace(/^medical-documents\//, "");
+    const descriptor = inferExamFileDescriptor(targetPath);
+    const downloadFileName = sanitizeDownloadFilename(examTitle, examDate, descriptor.extension);
 
-    // 1. Tentar gerar signed URL do Supabase Storage na nuvem
-    if (supabaseAdmin) {
-      try {
-        const { data, error } = await supabaseAdmin.storage
-          .from("medical-documents")
-          .createSignedUrl(cleanStoragePath, 900);
+    await recordSecurityAuditEvent({
+      userId,
+      eventType: accessMode === "download" ? "exam_document_downloaded" : "exam_document_viewed",
+      resourceType: "lab_exam",
+      resourceId: resolvedExamId || "pending_exam",
+      metadata: {
+        mode: accessMode,
+        fileType: descriptor.fileType,
+        requestId,
+      },
+    });
 
-        if (!error && data?.signedUrl) {
-          return res.json({ success: true, signedUrl: data.signedUrl, requestId });
-        }
-      } catch (cloudErr: any) {
-        console.warn(`[SIGNED_URL][CLOUD_NOTICE] Supabase signed URL falhou: ${cloudErr?.message || cloudErr}`);
+    // 1. Gerar Signed URL temporária (300s) do Supabase Storage na nuvem
+    try {
+      const signOptions = accessMode === "download" ? { download: downloadFileName } : undefined;
+      const { data, error } = await supabaseAdmin.storage
+        .from("medical-documents")
+        .createSignedUrl(targetPath, EXAM_DOCUMENT_SIGNED_URL_TTL_SECONDS, signOptions);
+
+      if (!error && data?.signedUrl) {
+        return res.json({
+          success: true,
+          signedUrl: data.signedUrl,
+          expiresIn: EXAM_DOCUMENT_SIGNED_URL_TTL_SECONDS,
+          mimeType: descriptor.mimeType,
+          fileType: descriptor.fileType,
+          fileName: downloadFileName,
+          requestId,
+        });
       }
+    } catch (cloudErr: any) {
+      console.warn(`[SIGNED_URL][CLOUD_NOTICE] Supabase signed URL falhou: ${cloudErr?.message || cloudErr}`);
     }
 
-    // 2. Fallback resiliente: Cofre Seguro Local (Gaveta de Exames Vita4Me)
-    const localFilePath = path.join(LOCAL_VAULT_DIR, cleanStoragePath);
+    // 2. Fallback resiliente: Cofre Local assinado com HMAC SHA-256 (300s)
+    const localFilePath = path.join(LOCAL_VAULT_DIR, targetPath);
     if (fs.existsSync(localFilePath)) {
-      const localSignedUrl = generateLocalSignedUrl(userId, cleanStoragePath, 900);
-      return res.json({ success: true, signedUrl: localSignedUrl, requestId });
+      const localSignedUrl = generateLocalSignedUrl(userId, targetPath, EXAM_DOCUMENT_SIGNED_URL_TTL_SECONDS, {
+        disposition: accessMode === "download" ? "attachment" : "inline",
+        filename: downloadFileName,
+      });
+      return res.json({
+        success: true,
+        signedUrl: localSignedUrl,
+        expiresIn: EXAM_DOCUMENT_SIGNED_URL_TTL_SECONDS,
+        mimeType: descriptor.mimeType,
+        fileType: descriptor.fileType,
+        fileName: downloadFileName,
+        requestId,
+      });
     }
 
-    console.error(`[SIGNED_URL][FAILED] requestId=${requestId} path=${cleanStoragePath} err=Arquivo não localizado no cofre nem na nuvem`);
+    console.error(`[SIGNED_URL][FAILED] requestId=${requestId} err=Arquivo não localizado no cofre nem na nuvem`);
     return res.status(404).json({ success: false, code: "STORAGE_SIGNED_URL_FAILED", message: "Documento original não localizado no prontuário.", requestId });
   } catch (err: any) {
     console.error(`[SIGNED_URL][ERROR] requestId=${requestId} err=${err?.message}`);
@@ -1660,6 +1908,8 @@ app.get("/api/exams/view-document", async (req: Request, res: Response) => {
     const uid = req.query.uid as string;
     const exp = req.query.exp as string;
     const sig = req.query.sig as string;
+    const disposition = req.query.disposition === "attachment" ? "attachment" : "inline";
+    const requestedName = typeof req.query.filename === "string" ? req.query.filename : "";
 
     if (!rawPath || !uid || !exp || !sig) {
       return res.status(400).send("Parâmetros de assinatura inválidos.");
@@ -1669,9 +1919,8 @@ app.get("/api/exams/view-document", async (req: Request, res: Response) => {
       return res.status(403).send("Link de visualização expirado ou inválido.");
     }
 
-    // Prevenção estrita de Path Traversal
-    const safeRelPath = path.normalize(rawPath).replace(/^(\.\.[\/\\])+/, "");
-    if (!safeRelPath.startsWith(`${uid}/`)) {
+    const safeRelPath = sanitizeOwnedExamStoragePath(uid, rawPath);
+    if (!safeRelPath) {
       return res.status(403).send("Acesso não autorizado.");
     }
 
@@ -1682,11 +1931,15 @@ app.get("/api/exams/view-document", async (req: Request, res: Response) => {
 
     const fileBuffer = fs.readFileSync(fullLocalPath);
     const mime = detectRealMimeType(fileBuffer) || "application/pdf";
-    const filename = path.basename(fullLocalPath);
+    const safeExt = inferExamFileDescriptor(safeRelPath, mime).extension;
+    const safeFilename = requestedName
+      ? sanitizeDownloadFilename(requestedName.replace(/\.[^/.]+$/, ""), null, safeExt)
+      : path.basename(fullLocalPath);
 
     res.setHeader("Content-Type", mime);
-    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
-    res.setHeader("Cache-Control", "private, max-age=900");
+    res.setHeader("Content-Disposition", `${disposition}; filename="${safeFilename}"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-store");
     return res.send(fileBuffer);
   } catch (err: any) {
     console.error("Erro ao servir documento local:", err);
@@ -1703,11 +1956,12 @@ app.post("/api/exams/cancel-upload", requireAuth, async (req: AuthenticatedReque
     const userId = req.user?.id;
     const { storagePath } = req.body;
 
-    if (userId && storagePath && typeof storagePath === "string" && storagePath.startsWith(`${userId}/`)) {
+    const safePath = typeof storagePath === "string" && userId ? sanitizeOwnedExamStoragePath(userId, storagePath) : null;
+    if (safePath) {
       if (supabaseAdmin) {
-        await supabaseAdmin.storage.from("medical-documents").remove([storagePath]).catch(() => { });
+        await supabaseAdmin.storage.from("medical-documents").remove([safePath]).catch(() => { });
       }
-      const localFilePath = path.join(LOCAL_VAULT_DIR, storagePath);
+      const localFilePath = path.join(LOCAL_VAULT_DIR, safePath);
       if (fs.existsSync(localFilePath)) {
         try { fs.unlinkSync(localFilePath); } catch { }
       }
@@ -1715,6 +1969,107 @@ app.post("/api/exams/cancel-upload", requireAuth, async (req: AuthenticatedReque
     return res.json({ success: true });
   } catch {
     return res.json({ success: false });
+  }
+});
+
+/**
+ * ENDPOINT 1.4: EXCLUSÃO COMPLETA E CONSISTENTE DE EXAME E ARQUIVO ORIGINAL
+ * Valida titularidade em lab_exams e family_members, sanitiza file_url do banco e garante consistência Storage <-> DB.
+ */
+app.delete("/api/exams/:examId", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const requestId = crypto.randomUUID();
+  try {
+    const userId = req.user?.id;
+    const examId = typeof req.params.examId === "string" ? req.params.examId.trim() : "";
+
+    if (!userId || !supabaseAdmin) {
+      return res.status(401).json({ success: false, code: "AUTH_FAILED", message: "Usuário não autenticado.", requestId });
+    }
+
+    const result = await deleteExamWithStorage({
+      userId,
+      examId,
+      requestId,
+      repo: {
+        async findExamById(id) {
+          const { data, error } = await supabaseAdmin!
+            .from("lab_exams")
+            .select("id, user_id, family_member_id, file_url")
+            .eq("id", id)
+            .maybeSingle();
+          return { data: data || null, error: error?.message || null };
+        },
+        async findFamilyMemberOwner(memberId) {
+          const { data, error } = await supabaseAdmin!
+            .from("family_members")
+            .select("user_id")
+            .eq("id", memberId)
+            .maybeSingle();
+          return { ownerUserId: data?.user_id || null, error: error?.message || null };
+        },
+        async removeCloudStorageObject(storagePath) {
+          try {
+            const { error } = await supabaseAdmin!.storage.from("medical-documents").remove([storagePath]);
+            if (error) {
+              return { ok: false, error: error.message };
+            }
+            return { ok: true };
+          } catch (err: any) {
+            return { ok: false, error: err?.message || "Storage remove failed" };
+          }
+        },
+        async removeLocalVaultObject(storagePath) {
+          try {
+            const localFilePath = path.join(LOCAL_VAULT_DIR, storagePath);
+            if (fs.existsSync(localFilePath)) {
+              fs.unlinkSync(localFilePath);
+            }
+            return { ok: true };
+          } catch (err: any) {
+            return { ok: false, error: err?.message || "Local vault unlink failed" };
+          }
+        },
+        async deleteExamRow(id, ownerId) {
+          const { data, error } = await supabaseAdmin!
+            .from("lab_exams")
+            .delete()
+            .eq("id", id)
+            .eq("user_id", ownerId)
+            .select("id");
+          if (error) {
+            return { deleted: false, error: error.message };
+          }
+          return { deleted: Array.isArray(data) && data.length > 0 };
+        },
+        async recordAudit(auditParams) {
+          await recordSecurityAuditEvent(auditParams);
+        },
+      },
+    });
+
+    if (result.ok === false) {
+      return res.status(result.status).json({
+        success: false,
+        code: result.code,
+        message: result.message,
+        requestId: result.requestId,
+      });
+    }
+
+    return res.json({
+      success: true,
+      deletedExamId: result.deletedExamId,
+      storageDeleted: result.storageDeleted,
+      requestId: result.requestId,
+    });
+  } catch (err: any) {
+    console.error(`[DELETE_EXAM][ERROR] requestId=${requestId} err=${err?.message || err}`);
+    return res.status(500).json({
+      success: false,
+      code: "INTERNAL_ERROR",
+      message: "Falha interna ao excluir o exame.",
+      requestId,
+    });
   }
 });
 
