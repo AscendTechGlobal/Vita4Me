@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { hasActivePasswordRecoveryFlag } from "../lib/supabase";
 import { trackEvent, trackPageView } from "../lib/analytics";
 import { validatePasswordPolicy, NEUTRAL_PASSWORD_RESET_MESSAGE } from "../lib/passwordPolicy";
 import { LegalDocumentsModal, LegalTab } from "./LegalDocumentsModal";
@@ -23,7 +24,7 @@ interface AuthPageViewProps {
 }
 
 export const AuthPageView: React.FC<AuthPageViewProps> = ({ initialTab = "login" }) => {
-  const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, resetPasswordForEmail, isLoading: authLoading } = useAuth();
+  const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, resetPasswordForEmail, isLoading: authLoading, isPasswordRecovery } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -79,20 +80,45 @@ export const AuthPageView: React.FC<AuthPageViewProps> = ({ initialTab = "login"
     }
   };
 
-  // Sync tab with initialTab prop or URL
+  // Sync tab with initialTab prop or URL query params
   useEffect(() => {
-    setTab(initialTab);
-    setErrorMsg(null);
-    setSuccessMsg(null);
-    trackPageView(location.pathname, `Vita4Me — ${initialTab === 'signup' ? 'Cadastro' : 'Login'}`);
-  }, [initialTab, location.pathname]);
+    const searchParams = new URLSearchParams(location.search);
+    const requestedTab = searchParams.get("tab");
+    const nextTab = requestedTab === "reset" ? "reset" : initialTab;
 
-  // Se o usuário já estiver autenticado, redireciona diretamente para /app
+    setTab(nextTab);
+    setErrorMsg(null);
+
+    if (searchParams.get("passwordReset") === "success") {
+      setSuccessMsg("Senha alterada com sucesso! Entre utilizando sua nova senha.");
+      try {
+        window.history.replaceState({}, document.title, location.pathname);
+      } catch {
+        // Silencioso
+      }
+    } else {
+      setSuccessMsg(null);
+    }
+
+    const pageTitle =
+      nextTab === "signup"
+        ? "Vita4Me — Cadastro"
+        : nextTab === "reset"
+          ? "Vita4Me — Recuperar Senha"
+          : "Vita4Me — Login";
+    trackPageView(location.pathname, pageTitle);
+  }, [initialTab, location.pathname, location.search]);
+
+  // Se o usuário já estiver autenticado, redireciona para /reset-password (em recovery) ou /app
   useEffect(() => {
     if (!authLoading && user) {
-      navigate("/app", { replace: true });
+      if (isPasswordRecovery || hasActivePasswordRecoveryFlag()) {
+        navigate("/reset-password", { replace: true });
+      } else {
+        navigate("/app", { replace: true });
+      }
     }
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading, isPasswordRecovery, navigate]);
 
   // Real-time password criteria validation via política única centralizada (A08)
   const passwordCriteria = useMemo(() => {
