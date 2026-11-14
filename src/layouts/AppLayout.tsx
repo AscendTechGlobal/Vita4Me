@@ -21,7 +21,7 @@ import {
 import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from "../types";
 import { trackEvent, trackPageView } from "../lib/analytics";
 import { supabase, isSupabaseConfigured, getAuthHeaders } from "../lib/supabase";
-import { LegalDocumentsModal, LegalTab } from "../components/LegalDocumentsModal";
+import { LegalDocumentsModal, LegalTab, LEGAL_DOCUMENT_VERSION } from "../components/LegalDocumentsModal";
 
 // Lazy-loaded Modals
 const BillingModal = lazy(() => import("../components/BillingModal").then(m => ({ default: m.BillingModal })));
@@ -123,7 +123,7 @@ export const AppLayout: React.FC = () => {
                 termsAccepted: true,
                 privacyAccepted: true,
                 healthDataAccepted: true,
-                documentVersion: parsed.documentVersion || "2.0",
+                documentVersion: parsed.documentVersion || LEGAL_DOCUMENT_VERSION,
                 source: "oauth_signup",
               }),
             });
@@ -522,7 +522,7 @@ export const AppLayout: React.FC = () => {
                     >
                       Política de Privacidade
                     </button>{" "}
-                    (Versão 2.0).
+                    (Versão {LEGAL_DOCUMENT_VERSION}).
                   </span>
                 </label>
 
@@ -573,7 +573,7 @@ export const AppLayout: React.FC = () => {
                           termsAccepted: consentTerms,
                           privacyAccepted: consentTerms,
                           healthDataAccepted: consentHealth,
-                          documentVersion: "2.0",
+                          documentVersion: LEGAL_DOCUMENT_VERSION,
                           source: "oauth_consent_gate",
                         }),
                       });

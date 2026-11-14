@@ -9,6 +9,7 @@ import {
 } from '../lib/supabase';
 import { clearAllHealthStorage, ensureStorageUserScope } from '../lib/healthStorage';
 import { validatePasswordPolicy } from '../lib/passwordPolicy';
+import { LEGAL_DOCUMENT_VERSION } from '../components/LegalDocumentsContent';
 import { UserProfile } from '../types';
 
 const OFFICIAL_RECOVERY_REDIRECT_URL = 'https://vita4me.com/reset-password';
@@ -233,7 +234,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             termsAccepted: consents.termsAccepted,
             privacyAccepted: consents.privacyAccepted,
             healthDataAccepted: consents.healthDataAccepted,
-            documentVersion: consents.documentVersion || "2.0",
+            documentVersion: consents.documentVersion || LEGAL_DOCUMENT_VERSION,
           },
         }),
       });
@@ -275,7 +276,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             termsAccepted: true,
             privacyAccepted: true,
             healthDataAccepted: true,
-            documentVersion: consents.documentVersion || "2.0",
+            documentVersion: consents.documentVersion || LEGAL_DOCUMENT_VERSION,
             acceptedAt,
             source: "web_signup_fallback",
           },

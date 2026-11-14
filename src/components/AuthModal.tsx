@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { trackEvent } from "../lib/analytics";
 import { validatePasswordPolicy, NEUTRAL_PASSWORD_RESET_MESSAGE } from "../lib/passwordPolicy";
-import { LegalDocumentsModal, LegalTab } from "./LegalDocumentsModal";
+import { LegalDocumentsModal, LegalTab, LEGAL_DOCUMENT_VERSION } from "./LegalDocumentsModal";
 import {
   X,
   Eye,
@@ -60,7 +60,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             termsAccepted: true,
             privacyAccepted: true,
             healthDataAccepted: true,
-            documentVersion: "2.0",
+            documentVersion: LEGAL_DOCUMENT_VERSION,
             acceptedAt: new Date().toISOString(),
           })
         );
@@ -155,7 +155,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           termsAccepted,
           privacyAccepted: termsAccepted,
           healthDataAccepted: healthConsentAccepted,
-          documentVersion: "2.0",
+          documentVersion: LEGAL_DOCUMENT_VERSION,
         });
         if (error) {
           setErrorMsg(error);
