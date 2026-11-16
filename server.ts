@@ -20,11 +20,18 @@ import {
   deleteExamWithStorage,
   sanitizeOwnedExamStoragePath,
 } from "./src/server/exams/examDeletionService.js";
+import {
+  hasValidEdgeProxySecret,
+  isAllowedOrigin,
+  isEdgeOriginProtectedRouteExempt,
+  resolveTrustedClientIp,
+  trustProxyValidator,
+} from "./src/server/security/networkSecurity.js";
 
 dotenv.config();
 
 const app = express();
-app.set("trust proxy", 1);
+app.set("trust proxy", trustProxyValidator);
 app.disable("x-powered-by");
 const PORT = Number(process.env.PORT) || 3000;
 const isCompiled = (typeof __filename !== "undefined" && __filename.includes("dist")) || (process.argv[1] ? process.argv[1].includes("dist") : false);
@@ -35,7 +42,7 @@ const IS_PROD =
   Boolean(process.env.K_SERVICE) ||
   isCompiled ||
   process.env.NODE_ENV !== "development";
-const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
+const APP_URL = process.env.APP_URL || (IS_PROD ? "https://vita4me.com" : `http://localhost:${PORT}`);
 
 // ==============================================================================
 // 1. SUPABASE SERVICE-ROLE CLIENT (FONTE DA VERDADE NO BACKEND)
@@ -126,8 +133,6 @@ app.use(
           "'self'",
           "https://*.supabase.co",
           "https://api.stripe.com",
-          "https://generativelanguage.googleapis.com",
-          "https://*.resend.com",
         ],
         frameSrc: ["'self'", "blob:", "https://js.stripe.com", "https://hooks.stripe.com"],
         objectSrc: ["'none'"],
@@ -144,50 +149,25 @@ app.use(
   })
 );
 
-const isAllowedOrigin = (origin?: string): boolean => {
-  if (!origin) return false;
+// Permissions-Policy explícita restringindo recursos sensíveis do navegador
+app.use((_req, res, next) => {
+  res.setHeader(
+    "Permissions-Policy",
+    'camera=(), microphone=(), geolocation=(), usb=(), interest-cohort=(), payment=(self "https://js.stripe.com")'
+  );
+  next();
+});
 
-  try {
-    const parsed = new URL(origin);
-    const host = parsed.hostname.toLowerCase();
-
-    // Localhost / Loopback apenas em desenvolvimento
-    if (!IS_PROD && (host === "localhost" || host === "127.0.0.1")) return true;
-
-    // Domínios Vita4Me oficiais de produção
-    if (
-      host === "vita4me.app" ||
-      host.endsWith(".vita4me.app") ||
-      host === "vita4me.com.br" ||
-      host.endsWith(".vita4me.com.br") ||
-      host === "vita4me.com" ||
-      host.endsWith(".vita4me.com")
-    ) {
-      return true;
-    }
-
-    // Serviços Cloud Run oficiais do Vita4Me (*.run.app)
-    if (host.endsWith(".run.app") && host.includes("vita4me")) return true;
-
-    // APP_URL explícita do ambiente se definida
-    if (APP_URL) {
-      try {
-        const appUrlHost = new URL(APP_URL).hostname.toLowerCase();
-        if (host === appUrlHost) return true;
-      } catch {
-        // Ignora URL malformada na variável de ambiente
-      }
-    }
-
-    return false;
-  } catch {
-    return false;
-  }
-};
+const checkCorsOrigin = (origin?: string): boolean =>
+  isAllowedOrigin(origin, {
+    isProd: IS_PROD,
+    appUrl: process.env.APP_URL || APP_URL,
+    extraAllowedOrigins: process.env.CORS_ALLOWED_ORIGINS,
+  });
 
 // Separação estrita de CORS entre:
 // 1. Assets estáticos públicos (Access-Control-Allow-Origin: *, SEM Access-Control-Allow-Credentials)
-// 2. Rotas de API /api/* (Allowlist estrita de Origin; nunca combina '*' com Credentials)
+// 2. Rotas de API /api/* (Allowlist estrita de Origin HTTPS em prod; nunca combina '*' com Credentials)
 // 3. Navegação direta / páginas HTML (Sem headers CORS conflitantes)
 app.use((req, res, next) => {
   const isStaticAsset =
@@ -210,7 +190,7 @@ app.use((req, res, next) => {
       return next();
     }
 
-    if (isAllowedOrigin(requestOrigin)) {
+    if (checkCorsOrigin(requestOrigin)) {
       res.setHeader("Access-Control-Allow-Origin", requestOrigin);
       res.setHeader("Access-Control-Allow-Credentials", "true");
       res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS");
@@ -265,6 +245,36 @@ app.use((req: any, res: Response, next: NextFunction) => {
   });
 
   next();
+});
+
+// ==============================================================================
+// 4.2 EDGE ORIGIN PROTECTION GUARD (CLOUDFLARE WORKER -> CLOUD RUN)
+// ==============================================================================
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const configuredEdgeSecret = process.env.EDGE_SHARED_SECRET;
+  if (!IS_PROD || !configuredEdgeSecret) {
+    return next();
+  }
+
+  const providedHeader = req.headers["x-vita4me-edge-secret"];
+  const hasProvidedHeader =
+    (typeof providedHeader === "string" && providedHeader.length > 0) ||
+    (Array.isArray(providedHeader) && providedHeader.length > 0);
+
+  // Health checks de infraestrutura do Cloud Run e webhooks assinados criptograficamente
+  // permanecem acessíveis quando não há tentativa explícita de spoof do header de borda.
+  if (!hasProvidedHeader && isEdgeOriginProtectedRouteExempt(req)) {
+    return next();
+  }
+
+  if (!hasValidEdgeProxySecret(req, configuredEdgeSecret)) {
+    return res.status(403).json({
+      error: "Acesso direto à origem não autorizado.",
+      code: "ORIGIN_EDGE_AUTH_REQUIRED",
+    });
+  }
+
+  return next();
 });
 
 // ==============================================================================
@@ -501,40 +511,82 @@ app.post(
 app.use(express.json({ limit: "15mb" }));
 
 // ==============================================================================
-// 6. RATE LIMITING CATEGORIZADO
+// 6. RATE LIMITING CATEGORIZADO (COM RESOLUÇÃO ANTI-SPOOFING DE IP REAL)
 // ==============================================================================
+const rateLimitIpKey = (req: Request): string => ipKeyGenerator(resolveTrustedClientIp(req));
+const rateLimitUserOrIpKey = (req: Request): string => {
+  const userId = (req as AuthenticatedRequest).user?.id;
+  if (userId) return `user:${userId}`;
+  return rateLimitIpKey(req);
+};
 
-// Limite Geral para rotas públicas e healthcheck
+// Limite Geral para rotas /api/* (exceto webhooks externos de pagamento)
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
   max: 300,
+  keyGenerator: rateLimitIpKey,
   message: { error: "Muitas requisições. Tente novamente em alguns minutos." },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// Limite para endpoints de Checkout / Stripe
-const stripeLimiter = rateLimit({
+// Limite rigoroso para rotas de Autenticação/Cadastro/Exclusão (anti-brute-force & enumeração)
+const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30,
-  message: { error: "Limite de tentativas de checkout atingido. Aguarde 15 minutos." },
+  max: 15,
+  keyGenerator: rateLimitIpKey,
+  message: {
+    error: "Muitas tentativas de autenticação ou cadastro. Aguarde 15 minutos antes de tentar novamente.",
+    code: "AUTH_RATE_LIMIT_EXCEEDED",
+  },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// Limite rigoroso para Endpoints de IA (Proteção contra Abuso e Política de Uso Justo - Fair Use)
-const aiLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutos
-  max: 40, // Até 40 consultas a cada 10 minutos por usuário/IP
-  keyGenerator: (req: Request) => {
-    const userId = (req as any).user?.id;
-    if (userId) return `user:${userId}`;
+// Limite para endpoints de Checkout / Billing / Stripe (não aplicado aos webhooks)
+const stripeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  keyGenerator: rateLimitUserOrIpKey,
+  message: { error: "Limite de tentativas de faturamento/checkout atingido. Aguarde 15 minutos." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-    return ipKeyGenerator(req.ip || "127.0.0.1");
+// Limite para Central / Gaveta de Exames (signed-url, viewer, cancel-upload, delete)
+const examsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  keyGenerator: rateLimitUserOrIpKey,
+  message: {
+    error: "Muitas operações na Central de Exames em sequência. Aguarde alguns minutos.",
+    code: "EXAMS_RATE_LIMIT_EXCEEDED",
   },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Limite pré-autenticação por IP para endpoints de IA (impede flood antes da checagem JWT)
+const aiIpLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutos
+  max: 35,
+  keyGenerator: rateLimitIpKey,
+  message: {
+    error: "Muitas solicitações para os serviços de IA a partir deste endereço. Aguarde alguns minutos.",
+    code: "RATE_LIMIT_EXCEEDED",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Limite rigoroso pós-requireAuth por Usuário (Fair Use real isolado por userId)
+const aiUserLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutos
+  max: 25, // Até 25 consultas Gemini a cada 10 minutos por usuário autenticado
+  keyGenerator: rateLimitUserOrIpKey,
   message: {
     error: "Limite temporário da Política de Uso Justo (Fair Use) atingido. Aguarde alguns minutos antes de realizar novas consultas de IA.",
-    code: "RATE_LIMIT_EXCEEDED"
+    code: "RATE_LIMIT_EXCEEDED",
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -548,9 +600,13 @@ app.use("/api/", (req: Request, res: Response, next: NextFunction) => {
   return generalLimiter(req, res, next);
 });
 
+app.use("/api/auth/", authLimiter);
 app.use("/api/stripe/create-checkout", stripeLimiter);
-app.use("/api/ai/*", aiLimiter);
-app.use("/api/gemini/*", aiLimiter);
+app.use("/api/stripe/create-portal-session", stripeLimiter);
+app.use("/api/billing/", stripeLimiter);
+app.use("/api/exams/", examsLimiter);
+app.use("/api/ai/*", aiIpLimiter);
+app.use("/api/gemini/*", aiIpLimiter);
 
 // ==============================================================================
 // 7. MIDDLEWARE DE AUTENTICAÇÃO JWT DO SUPABASE
@@ -934,7 +990,7 @@ app.post("/api/auth/register", async (req: Request, res: Response) => {
         userId: data.user.id,
         documentVersion: docVersion,
         source: "web_signup",
-        ip: req.ip,
+        ip: resolveTrustedClientIp(req),
         userAgent: req.headers["user-agent"],
       });
     }
@@ -1003,7 +1059,7 @@ app.post("/api/auth/consents", requireAuth, async (req: AuthenticatedRequest, re
       userId,
       documentVersion: docVersion,
       source: consentSource,
-      ip: req.ip,
+      ip: resolveTrustedClientIp(req),
       userAgent: req.headers["user-agent"],
     });
 
@@ -1300,7 +1356,7 @@ function extractJsonFromText(rawText: string): any {
  * Upload-first: Suporta PDF, JPG, JPEG, PNG, WebP
  * Validação rigorosa de magic bytes, armazenamento em bucket privado Supabase Storage e extração estruturada via Gemini 2.5 Flash
  */
-app.post("/api/ai/analyze-exam-document", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/ai/analyze-exam-document", requireAuth, aiUserLimiter, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
   const requestId = crypto.randomUUID();
   const startTime = Date.now();
   let currentStage = "INIT";
@@ -2077,7 +2133,7 @@ app.delete("/api/exams/:examId", requireAuth, async (req: AuthenticatedRequest, 
  * ENDPOINT 1: TRADUTOR INTELIGENTE DE EXAMES (TEXTO DIRETO)
  * Protegido com validação JWT, autorização server-side e limites éticos clínicos
  */
-app.post("/api/ai/translate-exam", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/ai/translate-exam", requireAuth, aiUserLimiter, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { title, rawText, category } = req.body;
 
@@ -2151,7 +2207,7 @@ Responda ESTRITAMENTE em formato JSON com o seguinte schema:
 * ENDPOINT 2: ASSISTENTE CONVERSACIONAL VITA4ME
 * Protegido com validação JWT, autorização server-side, tolerância a contexto parcial e isolamento horizontal de dados
 */
-app.post("/api/ai/chat", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/ai/chat", requireAuth, aiUserLimiter, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
   const requestId = crypto.randomUUID();
   const startTime = Date.now();
   let currentStage = "CHAT_REQUEST_RECEIVED";
@@ -2367,7 +2423,7 @@ DIRETRIZES CLÍNICAS E LIMITES ÉTICOS MANDATÓRIOS (NÃO NEGOCIÁVEIS):
 /**
  * ENDPOINT 2.1: PREPARAÇÃO PARA CONSULTA MÉDICA COM IA
  */
-app.post("/api/gemini/prep-consultation", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/gemini/prep-consultation", requireAuth, aiUserLimiter, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { doctorName, specialty, reason, userContext } = req.body;
     const ai = getGeminiClient();
@@ -2419,7 +2475,7 @@ Responda em formato JSON rigoroso:
 /**
  * ENDPOINT 2.2: DICA DIÁRIA PERSONALIZADA DE SAÚDE & BEM-ESTAR
  */
-app.post("/api/gemini/daily-tip", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/gemini/daily-tip", requireAuth, aiUserLimiter, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { userProfile, dailyHabits, recentMetrics, medications, focusTopic } = req.body;
     const ai = getGeminiClient();
@@ -2467,7 +2523,7 @@ Responda em JSON:
 /**
  * ENDPOINT 2.3: ASSISTENTE GEMINI (ALIAS COMPATIBILIDADE)
  */
-app.post("/api/gemini/assistant", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/gemini/assistant", requireAuth, aiUserLimiter, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { message, userProfile, activeMedications, recentExams } = req.body;
     const ai = getGeminiClient();
@@ -2501,7 +2557,7 @@ DIRETRIZES: Você é uma ferramenta de letramento e organização. Nunca faça d
 /**
  * ENDPOINT 2.4: ANÁLISE E CLASSIFICAÇÃO DE DOCUMENTOS COM IA
  */
-app.post("/api/gemini/analyze-document", requireAuth, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/gemini/analyze-document", requireAuth, aiUserLimiter, requireAiAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { documentText } = req.body;
     const ai = getGeminiClient();
@@ -2673,11 +2729,24 @@ app.post(
 
 app.get(
   "/api/billing/pix-status/:paymentId",
-  async (req: Request, res: Response) => {
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { paymentId } = req.params;
-      if (!paymentId) {
+      const userId = req.user?.id;
+      if (!paymentId || !userId) {
         return res.status(400).json({ error: "Parâmetro paymentId é obrigatório." });
+      }
+
+      if (supabaseAdmin) {
+        const { data: tx } = await supabaseAdmin
+          .from("billing_transactions")
+          .select("user_id")
+          .eq("provider_transaction_id", paymentId)
+          .maybeSingle();
+        if (tx && tx.user_id && tx.user_id !== userId) {
+          return res.status(403).json({ error: "Acesso negado a esta transação." });
+        }
       }
 
       const result = await billingService.getPixStatus(paymentId);
@@ -2908,12 +2977,15 @@ async function startServer() {
       })
     );
 
-    // 2. Servir a pasta dist (onde o Vite compila assets, index.html, etc.)
+    // 2. Servir arquivos não-HTML de dist sem servir index.html com Access-Control-Allow-Origin: *
     app.use(
       express.static(distPath, {
+        index: false,
         maxAge: "1h",
-        setHeaders: (res) => {
-          res.setHeader("Access-Control-Allow-Origin", "*");
+        setHeaders: (res, filePath) => {
+          if (!filePath.endsWith(".html")) {
+            res.setHeader("Access-Control-Allow-Origin", "*");
+          }
         },
       })
     );
@@ -2922,9 +2994,12 @@ async function startServer() {
     if (fs.existsSync(publicPath)) {
       app.use(
         express.static(publicPath, {
+          index: false,
           maxAge: "1h",
-          setHeaders: (res) => {
-            res.setHeader("Access-Control-Allow-Origin", "*");
+          setHeaders: (res, filePath) => {
+            if (!filePath.endsWith(".html")) {
+              res.setHeader("Access-Control-Allow-Origin", "*");
+            }
           },
         })
       );
