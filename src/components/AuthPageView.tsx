@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { hasActivePasswordRecoveryFlag } from "../lib/supabase";
-import { trackEvent, trackPageView } from "../lib/analytics";
+import { trackEvent } from "../lib/analytics";
 import { validatePasswordPolicy, NEUTRAL_PASSWORD_RESET_MESSAGE } from "../lib/passwordPolicy";
 import { LegalDocumentsModal, LegalTab, LEGAL_DOCUMENT_VERSION } from "./LegalDocumentsModal";
 import {
@@ -106,7 +106,12 @@ export const AuthPageView: React.FC<AuthPageViewProps> = ({ initialTab = "login"
         : nextTab === "reset"
           ? "Vita4Me — Recuperar Senha"
           : "Vita4Me — Login";
-    trackPageView(location.pathname, pageTitle);
+    if (typeof document !== "undefined") {
+      document.title = pageTitle;
+    }
+    if (nextTab === "signup") {
+      trackEvent("signup_started", { source_surface: "auth" });
+    }
   }, [initialTab, location.pathname, location.search]);
 
   // Se o usuário já estiver autenticado, redireciona para /reset-password (em recovery) ou /app

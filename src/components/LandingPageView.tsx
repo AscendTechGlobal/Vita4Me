@@ -24,7 +24,8 @@ import {
 } from "lucide-react";
 import { HEALTH_PRICING_PLANS } from "../lib/stripe";
 import { PricingPlan } from "../types";
-import { trackEvent, trackPageView } from "../lib/analytics";
+import { trackEvent } from "../analytics/analytics";
+import { openCookiePreferencesModal } from "../analytics/consent";
 import { LegalDocumentsModal, LegalTab } from "./LegalDocumentsModal";
 import { useAuth } from "../contexts/AuthContext";
 import { useLanguage } from "../contexts/LanguageContext";
@@ -48,10 +49,28 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
   const [isScrolled, setIsScrolled] = useState(false);
   const [legalModalTab, setLegalModalTab] = useState<LegalTab | null>(null);
+  const pricingSectionRef = React.useRef<HTMLElement | null>(null);
+  const pricingViewedRef = React.useRef(false);
 
   React.useEffect(() => {
-    trackPageView('/', 'Vita4Me — Landing Page');
-    trackEvent('landing_view');
+    trackEvent('landing_view', { source_surface: 'landing' });
+  }, []);
+
+  React.useEffect(() => {
+    const el = pricingSectionRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting) && !pricingViewedRef.current) {
+          pricingViewedRef.current = true;
+          trackEvent("pricing_viewed", { source_surface: "landing" });
+          obs.disconnect();
+        }
+      },
+      { threshold: 0.2 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
   }, []);
 
   React.useEffect(() => {
@@ -288,7 +307,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             ) : (
               <>
                 <button
-                  onClick={onOpenBillingModal}
+                  onClick={() => {
+                    trackEvent("cta_clicked", { cta_id: "hero_start_trial", source_surface: "landing" });
+                    onOpenBillingModal();
+                  }}
                   className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-[#7AC943] to-[#96DC63] hover:from-[#96DC63] hover:to-[#7AC943] text-[#0A3B2E] font-black text-sm shadow-xl shadow-[#7AC943]/25 transition-all hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
                 >
                   <span>{dictionary.landing.ctaPrimary}</span>
@@ -296,7 +318,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 </button>
 
                 <button
-                  onClick={onOpenAuthModal}
+                  onClick={() => {
+                    trackEvent("cta_clicked", { cta_id: "hero_login", source_surface: "landing" });
+                    onOpenAuthModal();
+                  }}
                   className="w-full sm:w-auto px-7 py-4 rounded-2xl bg-[#0A3B2E] hover:bg-[#126D4A]/60 border border-[#126D4A] hover:border-[#7AC943]/60 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   <Lock className="w-4 h-4 text-[#7AC943]" />
@@ -546,7 +571,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       </section>
 
       {/* 7. Pricing Section (Individual & Família com 7 Dias Grátis) */}
-      <section id="planos" className="py-24 bg-[#0A3B2E]/50 border-t border-[#126D4A]/40">
+      <section ref={pricingSectionRef} id="planos" className="py-24 bg-[#0A3B2E]/50 border-t border-[#126D4A]/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
           
           <div className="text-center space-y-4 max-w-2xl mx-auto">
@@ -886,6 +911,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               className="hover:text-white transition cursor-pointer underline-offset-4 hover:underline"
             >
               Cookies
+            </button>
+            <button
+              type="button"
+              onClick={() => openCookiePreferencesModal()}
+              className="hover:text-white transition cursor-pointer underline-offset-4 hover:underline"
+            >
+              Preferências de Cookies
             </button>
             {user ? (
               <button 

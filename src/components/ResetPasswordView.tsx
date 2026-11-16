@@ -14,7 +14,6 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { trackPageView } from "../lib/analytics";
 import { validatePasswordPolicy } from "../lib/passwordPolicy";
 import {
   clearPasswordRecoveryState,
@@ -153,7 +152,9 @@ export const ResetPasswordView: React.FC = () => {
   }, [newPassword, confirmPassword]);
 
   useEffect(() => {
-    trackPageView("/reset-password", "Vita4Me — Redefinir Senha");
+    if (typeof document !== "undefined") {
+      document.title = "Vita4Me — Redefinir Senha";
+    }
   }, []);
 
   useEffect(() => {

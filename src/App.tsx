@@ -1,6 +1,8 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { trackPageView } from "./analytics/analytics";
+import { CookieConsentBanner } from "./components/CookieConsentBanner";
 import { hasActivePasswordRecoveryFlag } from "./lib/supabase";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
@@ -234,12 +236,22 @@ const AuthConfirmWrapper: React.FC = () => {
   return <AuthConfirmView onGoToLogin={() => navigate("/login")} />;
 };
 
+// ── RASTREADOR CENTRAL DE ROTAS SPA (COM SANITIZAÇÃO DE URL) ──
+const SpaRouteTracker: React.FC = () => {
+  const location = useLocation();
+  useEffect(() => {
+    trackPageView(location.pathname, document.title);
+  }, [location.pathname]);
+  return null;
+};
+
 export function App() {
   return (
     <ThemeProvider>
       <LanguageProvider>
         <AuthProvider>
           <BrowserRouter>
+            <SpaRouteTracker />
             <Suspense fallback={<LoadingSpinner />}>
               <Routes>
                 {/* ── ROTAS PÚBLICAS ── */}
@@ -275,6 +287,7 @@ export function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>
+            <CookieConsentBanner />
           </BrowserRouter>
         </AuthProvider>
       </LanguageProvider>

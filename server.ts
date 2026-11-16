@@ -27,6 +27,12 @@ import {
   resolveTrustedClientIp,
   trustProxyValidator,
 } from "./src/server/security/networkSecurity.js";
+import {
+  claimConfirmedConversionsForUser,
+  recordProductAnalyticsEvent,
+  upsertUserAttribution,
+} from "./src/server/analytics/analyticsService.js";
+import { AnalyticsEvent, EVENT_DESTINATION_MAP } from "./src/analytics/events.js";
 
 dotenv.config();
 
@@ -125,7 +131,15 @@ app.use(
         defaultSrc: ["'self'"],
         baseUri: ["'self'"],
         frameAncestors: ["'none'"],
-        scriptSrc: ["'self'", "https://js.stripe.com"],
+        scriptSrc: [
+          "'self'",
+          "https://js.stripe.com",
+          "https://www.googletagmanager.com",
+          "https://www.google-analytics.com",
+          "https://connect.facebook.net",
+          "https://www.clarity.ms",
+          "https://scripts.clarity.ms",
+        ],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:", "https:", "https://*.supabase.co"],
@@ -133,8 +147,25 @@ app.use(
           "'self'",
           "https://*.supabase.co",
           "https://api.stripe.com",
+          "https://www.google-analytics.com",
+          "https://analytics.google.com",
+          "https://*.google-analytics.com",
+          "https://*.analytics.google.com",
+          "https://www.googletagmanager.com",
+          "https://*.googletagmanager.com",
+          "https://www.google.com",
+          "https://googleads.g.doubleclick.net",
+          "https://connect.facebook.net",
+          "https://www.facebook.com",
+          "https://*.clarity.ms",
         ],
-        frameSrc: ["'self'", "blob:", "https://js.stripe.com", "https://hooks.stripe.com"],
+        frameSrc: [
+          "'self'",
+          "blob:",
+          "https://js.stripe.com",
+          "https://hooks.stripe.com",
+          "https://www.googletagmanager.com",
+        ],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: IS_PROD ? [] : null,
       },
@@ -362,6 +393,21 @@ app.post(
                 updated_at: new Date().toISOString(),
               })
               .eq("id", userId);
+
+            await recordProductAnalyticsEvent(supabaseAdmin, {
+              userId,
+              eventName: session.payment_status === "no_payment_required" ? "trial_started" : "subscription_started",
+              properties: {
+                plan_tier: planId === "family" ? "family" : "individual",
+                provider: "stripe",
+                transaction_id: session.id,
+                event_id: `stripe:${event.id}`,
+                value: typeof session.amount_total === "number" ? Number((session.amount_total / 100).toFixed(2)) : 0,
+                currency: (session.currency || "usd").toUpperCase(),
+              },
+              eventId: `stripe:${event.id}`,
+              source: "stripe_webhook",
+            });
           }
 
           // Disparo automático de e-mail de Boas-Vindas com Teste Grátis via Resend
@@ -414,6 +460,12 @@ app.post(
 
           if (customerId && supabaseAdmin) {
             console.log(`⚠️ [Stripe] Assinatura cancelada para customer ${customerId}.`);
+            const { data: canceledProf } = await supabaseAdmin
+              .from("profiles")
+              .select("id, plan_tier")
+              .eq("stripe_customer_id", customerId)
+              .maybeSingle();
+
             await supabaseAdmin
               .from("profiles")
               .update({
@@ -421,6 +473,20 @@ app.post(
                 updated_at: new Date().toISOString(),
               })
               .eq("stripe_customer_id", customerId);
+
+            if (canceledProf?.id) {
+              await recordProductAnalyticsEvent(supabaseAdmin, {
+                userId: canceledProf.id,
+                eventName: "subscription_cancelled",
+                properties: {
+                  plan_tier: canceledProf.plan_tier === "family" ? "family" : "individual",
+                  provider: "stripe",
+                  event_id: `stripe:${event.id}`,
+                },
+                eventId: `stripe:${event.id}`,
+                source: "stripe_webhook",
+              });
+            }
           }
           break;
         }
@@ -430,6 +496,12 @@ app.post(
           const customerId = typeof invoice.customer === "string" ? invoice.customer : null;
 
           if (customerId && supabaseAdmin) {
+            const { data: paidProf } = await supabaseAdmin
+              .from("profiles")
+              .select("id, plan_tier")
+              .eq("stripe_customer_id", customerId)
+              .maybeSingle();
+
             await supabaseAdmin
               .from("profiles")
               .update({
@@ -437,6 +509,23 @@ app.post(
                 updated_at: new Date().toISOString(),
               })
               .eq("stripe_customer_id", customerId);
+
+            if (paidProf?.id && invoice.amount_paid > 0) {
+              await recordProductAnalyticsEvent(supabaseAdmin, {
+                userId: paidProf.id,
+                eventName: "subscription_started",
+                properties: {
+                  plan_tier: paidProf.plan_tier === "family" ? "family" : "individual",
+                  provider: "stripe",
+                  transaction_id: invoice.id,
+                  event_id: `stripe:${event.id}`,
+                  value: Number((invoice.amount_paid / 100).toFixed(2)),
+                  currency: (invoice.currency || "usd").toUpperCase(),
+                },
+                eventId: `stripe:${event.id}`,
+                source: "stripe_webhook",
+              });
+            }
           }
 
           // Disparo de e-mail de confirmação de pagamento via Resend
@@ -1113,6 +1202,9 @@ app.delete("/api/auth/account", requireAuth, async (req: AuthenticatedRequest, r
       supabaseAdmin.from("lab_exams").delete().eq("user_id", userId),
       supabaseAdmin.from("family_members").delete().eq("user_id", userId),
       supabaseAdmin.from("user_consents").delete().eq("user_id", userId),
+      supabaseAdmin.from("user_attribution").delete().eq("user_id", userId),
+      supabaseAdmin.from("product_analytics_events").delete().eq("user_id", userId),
+      supabaseAdmin.from("tracking_consent_logs").delete().eq("user_id", userId),
       supabaseAdmin.from("profiles").delete().eq("id", userId),
     ]);
 
@@ -2873,6 +2965,93 @@ app.post("/api/webhooks/asaas", async (req: Request, res: Response) => {
     return res.status(400).json({
       error: err.message || "Erro no processamento do webhook Asaas.",
     });
+  }
+});
+
+// ==============================================================================
+// 7.4.1 ANALYTICS INTERNO, ATRIBUIÇÃO (FIRST/LAST TOUCH) E CONVERSÕES CONFIRMADAS
+// ==============================================================================
+app.post("/api/analytics/attribution", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+
+    const { first_touch, last_touch } = req.body || {};
+    const result = await upsertUserAttribution(supabaseAdmin, userId, { first_touch, last_touch });
+    return res.json({ ok: true, saved: result.saved });
+  } catch {
+    return res.status(200).json({ ok: true, saved: false });
+  }
+});
+
+app.post("/api/analytics/events", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+
+    const { eventName, properties, attributionSnapshot, eventId } = req.body || {};
+    if (typeof eventName !== "string" || !(eventName in EVENT_DESTINATION_MAP)) {
+      return res.status(400).json({ error: "Evento inválido.", code: "INVALID_ANALYTICS_EVENT" });
+    }
+
+    // Conversões financeiras confirmadas não são aceitas diretamente do cliente (somente webhook/server)
+    if (eventName === "trial_started" || eventName === "subscription_started" || eventName === "subscription_activated") {
+      return res.status(403).json({
+        error: "Eventos de conversão financeira são registrados exclusivamente pelo servidor após confirmação do gateway.",
+        code: "SERVER_CONFIRMED_ONLY",
+      });
+    }
+
+    const result = await recordProductAnalyticsEvent(supabaseAdmin, {
+      userId,
+      eventName: eventName as AnalyticsEvent,
+      properties: typeof properties === "object" && properties !== null ? properties : {},
+      attributionSnapshot,
+      eventId: typeof eventId === "string" ? eventId : undefined,
+      source: "client",
+    });
+
+    return res.json({ ok: true, recorded: result.recorded });
+  } catch {
+    return res.status(200).json({ ok: true, recorded: false });
+  }
+});
+
+app.post("/api/analytics/consent", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+
+    const { version, analytics, marketing, source } = req.body || {};
+    if (supabaseAdmin) {
+      await supabaseAdmin
+        .from("tracking_consent_logs")
+        .insert({
+          user_id: userId,
+          consent_version: typeof version === "string" ? version.slice(0, 20) : "1.0",
+          necessary_granted: true,
+          analytics_granted: Boolean(analytics),
+          marketing_granted: Boolean(marketing),
+          source: typeof source === "string" ? source.slice(0, 40) : "cmp_banner",
+        })
+        .then(() => {});
+    }
+
+    return res.json({ ok: true });
+  } catch {
+    return res.status(200).json({ ok: true });
+  }
+});
+
+app.get("/api/analytics/confirmed-conversions", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Não autenticado." });
+
+    const conversions = await claimConfirmedConversionsForUser(supabaseAdmin, userId);
+    return res.json({ conversions });
+  } catch {
+    return res.json({ conversions: [] });
   }
 });
 

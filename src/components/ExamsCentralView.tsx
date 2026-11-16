@@ -206,6 +206,10 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
     setIsProcessingFile(true);
     setProcessingStage("Criptografando e enviando documento para armazenamento seguro...");
 
+    const safeFileType = file.type === "application/pdf" ? "pdf" : "image";
+    trackEvent("exam_upload_started", { file_type: safeFileType });
+    trackEvent("ai_analysis_started", { file_type: safeFileType });
+
     try {
       // Ler arquivo como base64
       const base64Data = await new Promise<string>((resolve, reject) => {
@@ -255,6 +259,8 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
       }
 
       trackAiUsage('exam_explanation');
+      trackEvent('ai_analysis_completed', { file_type: safeFileType });
+      trackEvent('exam_upload_completed', { file_type: safeFileType, category });
       trackEvent('document_uploaded', { category });
 
       // Avançar para a etapa de revisão humana
@@ -706,6 +712,7 @@ export const ExamsCentralView: React.FC<ExamsCentralViewProps> = ({
           aria-selected={activeViewTab === "drawer"}
           onClick={() => {
             setActiveViewTab("drawer");
+            trackEvent("drawer_opened", { source_surface: "app" });
             loadDrawerItems();
           }}
           className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
