@@ -9,7 +9,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { trackPageView } from "../lib/analytics";
+import { openCookiePreferencesModal } from "../analytics/consent";
 import {
   LEGAL_DOCUMENT_META,
   LegalDocumentsContent,
@@ -57,7 +57,6 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({ documentId }) => {
       updateMetaTag('meta[name="twitter:description"]', "content", meta.description),
     ];
 
-    trackPageView(meta.path, meta.title);
     window.scrollTo({ top: 0, behavior: "auto" });
 
     return () => {
@@ -216,6 +215,13 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({ documentId }) => {
             <Link to="/cookies" className="hover:text-emerald-600 dark:hover:text-emerald-400 transition">
               Cookies
             </Link>
+            <button
+              type="button"
+              onClick={() => openCookiePreferencesModal()}
+              className="hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer"
+            >
+              Preferências de Cookies
+            </button>
             <Link to="/" className="hover:text-emerald-600 dark:hover:text-emerald-400 transition">
               Início
             </Link>

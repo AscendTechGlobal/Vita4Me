@@ -1,5 +1,6 @@
 import React from "react";
 import { ShieldCheck, Cookie, Stethoscope } from "lucide-react";
+import { openCookiePreferencesModal } from "../analytics/consent";
 
 export type PublicLegalDocumentId = "privacidade" | "termos" | "cookies";
 export type LegalTab = PublicLegalDocumentId | "consentimento";
@@ -196,6 +197,9 @@ export const LegalDocumentsContent: React.FC<LegalDocumentsContentProps> = ({ ac
               <li>
                 <strong>Cloudflare:</strong> Proteção de borda, DNS, mitigação de tráfego malicioso e criptografia em trânsito (SSL/TLS) para o domínio <code className="text-emerald-700 dark:text-emerald-400">vita4me.com</code>.
               </li>
+              <li>
+                <strong>Provedores opcionais de medição e mídia (mediante IDs configurados e consentimento prévio):</strong> Caso explicitamente configurados no ambiente de produção e somente após autorização do titular na categoria correspondente do gerenciador de cookies, o Vita4Me suporta Google Tag Manager / Google Analytics 4 (Analytics), Microsoft Clarity restrito às páginas públicas (Analytics), Google Ads e Meta Pixel (Marketing), operando exclusivamente com eventos técnicos/comerciais minimizados — jamais com dados de saúde, exames, diagnósticos ou identificadores pessoais diretos.
+              </li>
             </ul>
           </section>
 
@@ -325,27 +329,60 @@ export const LegalDocumentsContent: React.FC<LegalDocumentsContentProps> = ({ ac
               1. Cookies e Armazenamento Estritamente Necessários
             </h3>
             <p>
-              Essenciais para o funcionamento da aplicação, como manutenção segura da sessão autenticada via tokens temporários (JWT) no armazenamento de sessão do navegador (<code className="text-emerald-700 dark:text-emerald-400">sessionStorage</code>) e preferências de interface, como tema visual (claro/escuro) e idioma. Não podem ser desativados sem inviabilizar o login e a segurança da sessão.
+              Essenciais para o funcionamento e a segurança da aplicação, sempre ativos: manutenção segura da sessão autenticada via tokens temporários (JWT) no armazenamento de sessão (<code className="text-emerald-700 dark:text-emerald-400">sessionStorage</code>), proteção contra ataques, preferências de interface (tema visual e idioma) e o registro da sua escolha de consentimento. Não podem ser desativados sem inviabilizar o login e a segurança da conta.
             </p>
           </section>
 
           <section className="space-y-2">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              2. Métricas e Telemetria Agregada
+              2. Categoria Analytics (Opcional — Requer Consentimento)
             </h3>
             <p>
-              Não utilizamos cookies de publicidade comportamental de terceiros. Ferramentas de medição técnica agregada (como Google Analytics 4 com anonimização de IP) permanecem desativadas por padrão e somente operam se explicitamente habilitadas no ambiente de produção para métricas gerais das páginas públicas.{" "}
-              <strong>Nenhum dado clínico, biomarcador ou exame médico é transmitido através de cookies analíticos.</strong>
+              Permanece <strong>desativada por padrão</strong> antes da sua escolha explícita (Google Consent Mode v2 iniciado em estado negado: <code className="text-emerald-700 dark:text-emerald-400">analytics_storage = denied</code>). Caso você autorize <em>Analytics</em> e os respectivos identificadores públicos estejam configurados no ambiente:
+            </p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>
+                <strong>Google Tag Manager / Google Analytics 4 (GA4):</strong> Medição técnica agregada de visualizações de rotas e etapas gerais do funil com anonimização de IP e sem coleta de conteúdo de saúde. URLs sensíveis (como <code className="text-emerald-700 dark:text-emerald-400">/reset-password</code> e <code className="text-emerald-700 dark:text-emerald-400">/auth/confirm</code>) são sanitizadas antes de qualquer registro.
+              </li>
+              <li>
+                <strong>Microsoft Clarity (somente áreas públicas):</strong> Quando habilitado por ID de projeto e autorizado em <em>Analytics</em>, opera exclusivamente nas páginas públicas de apresentação e entrada, com mascaramento máximo. <strong>Não atua nem grava sessões dentro do prontuário autenticado (<code className="text-emerald-700 dark:text-emerald-400">/app/*</code>), exames, laudos, medicamentos, familiares ou formulários clínicos.</strong>
+              </li>
+            </ul>
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              3. Categoria Marketing e Atribuição (Opcional — Requer Consentimento)
+            </h3>
+            <p>
+              Permanece <strong>desativada por padrão</strong> (<code className="text-emerald-700 dark:text-emerald-400">ad_storage</code>, <code className="text-emerald-700 dark:text-emerald-400">ad_user_data</code> e <code className="text-emerald-700 dark:text-emerald-400">ad_personalization = denied</code>). Quando habilitados por IDs oficiais e autorizados em <em>Marketing</em>, <strong>Google Ads</strong> e <strong>Meta Pixel</strong> recebem apenas eventos comerciais minimizados (como início de checkout ou assinatura confirmada), sem Advanced Matching com e-mail/telefone e sem qualquer informação clínica. Identificadores de clique de anúncio (<code className="text-emerald-700 dark:text-emerald-400">gclid</code>, <code className="text-emerald-700 dark:text-emerald-400">fbclid</code>, <code className="text-emerald-700 dark:text-emerald-400">msclkid</code>) só são persistidos mediante consentimento de Marketing e parâmetros UTM são mantidos para atribuição de aquisição conforme o consentimento concedido (até revogação ou exclusão da conta).
             </p>
           </section>
 
           <section className="space-y-2">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              3. Gerenciamento pelo Usuário
+              4. Regra Absoluta para Dados de Saúde
             </h3>
             <p>
-              Você pode bloquear ou limpar os cookies e dados de armazenamento do navegador a qualquer momento através das configurações do seu navegador web.
+              <strong>Nenhum dado clínico, exame laboratorial, documento médico, biomarcador, medicamento, nome de familiar, sintoma ou resposta da inteligência artificial é transmitido ao Google, Meta, Microsoft Clarity ou qualquer plataforma externa de analytics ou publicidade.</strong>
             </p>
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              5. Alteração, Revogação e Gerenciamento pelo Usuário
+            </h3>
+            <p>
+              Você pode aceitar, rejeitar categorias não essenciais, personalizar ou <strong>revogar seu consentimento a qualquer momento</strong> sem prejuízo ao acesso ou funcionamento do seu prontuário, clicando no botão abaixo, em <em>Preferências de Cookies</em> no rodapé ou nas configurações da conta, além de poder limpar cookies diretamente pelo seu navegador.
+            </p>
+            <button
+              type="button"
+              onClick={() => openCookiePreferencesModal()}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer transition shadow-xs"
+            >
+              <Cookie className="w-3.5 h-3.5" />
+              <span>Gerenciar Preferências de Cookies</span>
+            </button>
           </section>
         </div>
       )}

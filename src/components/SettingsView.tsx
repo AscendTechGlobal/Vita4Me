@@ -33,6 +33,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { supabase, getAuthHeaders } from "../lib/supabase";
 import { clearAllHealthStorage } from "../lib/healthStorage";
+import { openCookiePreferencesModal } from "../analytics/consent";
 import { validatePasswordPolicy } from "../lib/passwordPolicy";
 import { openStripeCustomerPortal } from "../lib/stripe";
 import { cancelUnifiedSubscription } from "../lib/billing";
@@ -1098,6 +1099,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="w-full py-2 px-3 bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] font-semibold transition cursor-pointer text-left"
                 >
                   📜 Termos de Uso
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openCookiePreferencesModal()}
+                  className="w-full py-2 px-3 bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] font-semibold transition cursor-pointer text-left"
+                >
+                  🍪 Preferências de Cookies
                 </button>
               </div>
             </div>

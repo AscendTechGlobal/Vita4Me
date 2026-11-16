@@ -19,7 +19,7 @@ import {
   ensureStorageUserScope,
 } from "../lib/healthStorage";
 import { LabExam, HealthIndicator, Medication, HealthRecord, FamilyMember, DailyHabit } from "../types";
-import { trackEvent, trackPageView } from "../lib/analytics";
+import { syncAuthenticatedAnalyticsContext, trackEvent } from "../analytics/analytics";
 import { supabase, isSupabaseConfigured, getAuthHeaders } from "../lib/supabase";
 import { LegalDocumentsModal, LegalTab, LEGAL_DOCUMENT_VERSION } from "../components/LegalDocumentsModal";
 
@@ -83,22 +83,46 @@ export const AppLayout: React.FC = () => {
     ensureStorageUserScope(user?.id || null);
     refreshAllData();
 
-    // Hidratação assíncrona do Supabase ao autenticar
+    // Hidratação assíncrona do Supabase + sincronização de atribuição & conversões confirmadas pelo servidor
     if (user) {
       syncAllFromSupabase().then((synced) => {
         if (synced) refreshAllData();
       });
+
+      void syncAuthenticatedAnalyticsContext();
+
+      // Conversão real somente após confirmação de webhook/banco no backend (nunca por ?checkout_success=true)
+      (async () => {
+        try {
+          const headers = await getAuthHeaders();
+          if (!headers.Authorization) return;
+          const res = await fetch("/api/analytics/confirmed-conversions", { headers });
+          if (!res.ok) return;
+          const payload = await res.json().catch(() => ({}));
+          if (Array.isArray(payload?.conversions)) {
+            for (const conv of payload.conversions) {
+              if (conv?.eventName) {
+                trackEvent(conv.eventName, {
+                  ...(conv.properties || {}),
+                  event_id: conv.eventId || undefined,
+                  source: "server_confirmed",
+                });
+              }
+            }
+          }
+        } catch {
+          // Silencioso
+        }
+      })();
     }
 
-    // Detecção segura de retorno de Checkout com Sucesso
+    // Higieniza query string pós-checkout sem confiar no redirect como confirmação de venda
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get("checkout_success") === "true") {
-      const plan = (urlParams.get("plan") || "individual") as "individual" | "family";
-      const alreadyTracked = sessionStorage.getItem("vita4me_checkout_tracked");
-      if (!alreadyTracked) {
-        sessionStorage.setItem("vita4me_checkout_tracked", "true");
-        trackEvent("trial_started", { plan_tier: plan });
-        trackEvent("subscription_activated", { plan_tier: plan });
+    if (urlParams.has("checkout_success") || urlParams.has("checkout_canceled")) {
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch {
+        // Silencioso
       }
     }
   }, [user]);
@@ -211,7 +235,7 @@ export const AppLayout: React.FC = () => {
           medicationsCount={medications.filter(m => m.is_active).length}
         />
 
-        <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-950">
+        <main data-clarity-mask="true" className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-950">
           {/* Alerta de Dunning / Inadimplência (past_due) */}
           {profile?.subscription_status === 'past_due' && (
             <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200 sticky top-0 z-30 backdrop-blur-xs shadow-xs animate-in slide-in-from-top-2">

@@ -15,6 +15,7 @@ import {
   sendSubscriptionConfirmedEmail,
   sendTrialWelcomeEmail,
 } from "../../lib/emailService.js";
+import { recordProductAnalyticsEvent } from "../analytics/analyticsService.js";
 
 export class BillingService {
   private supabase: SupabaseClient | null = null;
@@ -336,6 +337,20 @@ export class BillingService {
       })
       .eq("id", params.userId);
 
+    await recordProductAnalyticsEvent(this.supabase, {
+      userId: params.userId,
+      eventName: "trial_started",
+      properties: {
+        plan_tier: params.planId,
+        billing_interval: params.interval,
+        provider: "asaas",
+        transaction_id: sub.subscriptionId,
+        event_id: `asaas_trial:${sub.subscriptionId}`,
+      },
+      eventId: `asaas_trial:${sub.subscriptionId}`,
+      source: "asaas_webhook",
+    });
+
     // 5. Enviar E-mail Transacional de Boas-Vindas ao Trial
     sendTrialWelcomeEmail({
       email: params.userEmail,
@@ -607,6 +622,21 @@ export class BillingService {
                 .eq("provider_transaction_id", payment.id);
             }
 
+            await recordProductAnalyticsEvent(this.supabase, {
+              userId,
+              eventName: "subscription_started",
+              properties: {
+                plan_tier: resolvedPlan === "family" ? "family" : "individual",
+                provider: "asaas",
+                transaction_id: payment?.id || eventId,
+                event_id: `asaas_pay:${payment?.id || eventId}`,
+                value: typeof payment?.value === "number" ? payment.value : 0,
+                currency: "BRL",
+              },
+              eventId: `asaas_pay:${payment?.id || eventId}`,
+              source: "asaas_webhook",
+            });
+
             // Disparar e-mail de confirmação
             const { data: userProfile } = await this.supabase
               .from("profiles")
@@ -652,6 +682,17 @@ export class BillingService {
                 updated_at: new Date().toISOString(),
               })
               .eq("id", userId);
+
+            await recordProductAnalyticsEvent(this.supabase, {
+              userId,
+              eventName: "subscription_cancelled",
+              properties: {
+                provider: "asaas",
+                event_id: `asaas_cancel:${eventId}`,
+              },
+              eventId: `asaas_cancel:${eventId}`,
+              source: "asaas_webhook",
+            });
           }
           break;
         }
