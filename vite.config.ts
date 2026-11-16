@@ -42,20 +42,20 @@ export default defineConfig(() => {
     },
     server: {
       allowedHosts: [
-        'vita4me-production.up.railway.app',
-        'vita4me.app',
-        'www.vita4me.app',
-        '.run.app',
+        'vita4me.com',
+        'www.vita4me.com',
+        'localhost',
+        '127.0.0.1',
       ],
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
     preview: {
       allowedHosts: [
-        'vita4me-production.up.railway.app',
-        'vita4me.app',
-        'www.vita4me.app',
-        '.run.app',
+        'vita4me.com',
+        'www.vita4me.com',
+        'localhost',
+        '127.0.0.1',
       ],
     },
   };

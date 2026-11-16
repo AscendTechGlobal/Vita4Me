@@ -22,7 +22,10 @@ export class BillingService {
   private appUrl: string;
 
   constructor() {
-    this.appUrl = process.env.APP_URL || "http://localhost:3000";
+    const isProdEnv =
+      process.env.NODE_ENV === "production" ||
+      Boolean(process.env.K_SERVICE);
+    this.appUrl = process.env.APP_URL || (isProdEnv ? "https://vita4me.com" : "http://localhost:3000");
     this.initSupabase();
     this.initStripe();
   }
